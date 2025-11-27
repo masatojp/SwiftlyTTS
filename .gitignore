@@ -4,4 +4,4 @@ __pycache__/
 *.pyc
 *.wav
 .vscode/
-config.yaml
+config.yml
