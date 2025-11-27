@@ -2,12 +2,13 @@
 # 使用方法:
 # - ビルド: docker build -t swiftlytts-bot:latest .
 # - 実行 (.env をマウントするか、環境変数を渡します):
-# docker run --rm -e DISCORD_TOKEN=... -e DB_HOST=... -e DB_USER=... -e DB_PASSWORD=... swiftlytts-bot:latest
+# docker run --rm -e DISCORD_TOKEN=... -e DB_HOST=... -e DB_USER=... -e DB_PASSWORD=... -v $(pwd)/config.yml:/app/config.yml swiftlytts-bot:latest
 # 必須の環境変数 (少なくとも):
 # - DISCORD_TOKEN: Discord ボットトークン
 # - DB_HOST、DB_PORT、DB_NAME、DB_USER、DB_PASSWORD: PostgreSQL 接続
 # オプション:
 # - SHARD_COUNT: シャード数 (デフォルト 3)
+# - config.yml をマウントすることで、設定ファイルを読み込ませることができます。
 
 FROM python:3.11-slim
 
