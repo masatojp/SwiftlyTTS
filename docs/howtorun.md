@@ -32,3 +32,27 @@
    ```bash
    docker compose down
    ```
+
+## 既存のDB・VOICEVOXを使用する場合 (アプリのみ起動)
+すでに PostgreSQL や VOICEVOX サーバーが稼働している場合は、アプリ単体のコンテナをビルドして接続できます。
+
+1. イメージのビルド
+   ```bash
+   docker build -t swiftlytts .
+   ```
+
+2. 実行
+   `.env` ファイルを使用するか、`-e` オプションで接続先を指定して起動します。
+   
+   ```bash
+   # 例: .env ファイルを使用しつつ、DBホストとVOICEVOX URLを上書きする場合
+   docker run -d --name swiftlytts \
+     --env-file .env \
+     -e DB_HOST=192.168.x.x \
+     -e VOICEVOX_URL=http://192.168.x.x:50021 \
+     swiftlytts
+   ```
+   
+   **注意**: 
+   - ホストOSのDB等に接続する場合は、適切なネットワーク設定（`--network host` や適切なIPアドレス指定）を行ってください。
+   - `DB_HOST` や `VOICEVOX_URL` は `.env` 内の設定よりも `-e` で指定した値が優先されます。
