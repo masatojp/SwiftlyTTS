@@ -14,12 +14,17 @@
    cd SwiftlyTTS
    ```
 
-2. 環境変数の設定
-   `.env.example` をコピーして `.env` を作成し、BotトークンやDB接続情報を設定してください。
+2. 必須ファイルの準備
+   `.env` と `config.yml` を作成します。
+   
    ```bash
+   # 環境変数のみ設定
    cp .env.example .env
-   vi .env
+   # 設定ファイルを作成
+   cp config.yml.example config.yml
    ```
+   
+   作成後、`.env` にBotトークンやDB接続情報、`config.yml` にPrefix設定などを記述してください。
 
 3. 起動する
    Bot、PostgreSQL、VOICEVOX サーバーが一括で起動します。
