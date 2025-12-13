@@ -4,7 +4,6 @@ asyncpg
 PyYAML
 aiohttp
 psutil
-voicevox-client
 PyNaCl
 prometheus_client
 sentry-sdk
