@@ -6,6 +6,7 @@ import re
 from discord.ui import View, Button
 import asyncio
 import time
+from lib.ai_reading import AIReadingClient  # 追加
 
 class DictionaryCog(commands.Cog):
     def __init__(self, bot):
@@ -18,6 +19,7 @@ class DictionaryCog(commands.Cog):
         self.cache_lock = asyncio.Lock()
         self.cache_task = None
         self.cache_last_update = 0
+        self.ai_client = AIReadingClient() # AIクライアント初期化
 
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
@@ -319,6 +321,10 @@ class DictionaryCog(commands.Cog):
                 text = text.replace(row['key'], row['value'])
         if len(text) > 70:
             text = text[:150] + "省略"
+        
+        # 最後にAIによる読み仮名変換を適用 (APIキー設定時のみ)
+        text = await self.ai_client.get_reading(text)
+        
         return text
 
 async def setup(bot):
