@@ -1,7 +1,7 @@
 # SwiftlyTTS Ver.Masato.JP
 
 > [!IMPORTANT]
-> このリポジトリはアーカイブされたhttps://github.com/techfish-11/SwiftlyTTS のフォーク版です。\n
+> このリポジトリはアーカイブされたhttps://github.com/techfish-11/SwiftlyTTS のフォーク版です。
 > 現在も開発しており、主に生成AIを用いた開発を行っています。
 
 無駄のない読み上げBot
