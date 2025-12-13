@@ -1,14 +1,10 @@
-# SwiftlyTTS
+# SwiftlyTTS Ver.Masato.JP
 
 > [!IMPORTANT]
-> このリポジトリはアーカイブされたhttps://github.com/techfish-11/SwiftlyTTS のフォーク版です。
+> このリポジトリはアーカイブされたhttps://github.com/techfish-11/SwiftlyTTS のフォーク版です。\n
 > 現在も開発しており、主に生成AIを用いた開発を行っています。
 
 無駄のない読み上げBot
-
-https://discord.com/oauth2/authorize?client_id=1371465579780767824
-
-使用方法: https://swiftlybot.com/commands
 
 # 実行方法
 詳細な手順は [docs/howtorun.md](docs/howtorun.md) を参照してください。
