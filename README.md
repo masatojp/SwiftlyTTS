@@ -13,7 +13,12 @@ https://discord.com/oauth2/authorize?client_id=1371465579780767824
 使用方法: https://swiftlybot.com/commands
 
 # 実行方法
-[docs/howtorun.md](docs/howtorun.md) を参照してください。
+詳細な手順は [docs/howtorun.md](docs/howtorun.md) を参照してください。
+
+## クイックスタート (Docker Compose)
+1. リポジトリをクローン
+2. `.env.example` をコピーして `.env` を作成・編集
+3. 起動: `docker compose up -d`
 
 # ライセンス表記
 
