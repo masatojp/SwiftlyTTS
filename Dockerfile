@@ -71,6 +71,9 @@ COPY --from=builder --chown=${USER}:${USER} /app/.venv /app/.venv
 # Copy application code
 COPY --chown=${USER}:${USER} . .
 
+# Create tmp directory with correct permissions
+RUN mkdir -p /app/tmp && chown -R ${USER}:${USER} /app/tmp
+
 # Switch to non-root user
 USER ${USER}
 
