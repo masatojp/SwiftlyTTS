@@ -15,13 +15,13 @@ class AIReadingClient:
         AIを使用してテキストを読みビ（ひらがな・カタカナのみ）に変換する
         """
         if not self.api_key:
-            self.logger.info("AI Reading: Skipped (No API Key configured)")
+            print("AI Reading: Skipped (No API Key configured)")
             return text
 
         if not text or not text.strip():
             return text
         
-        self.logger.info(f"AI Reading: Processing text: {text[:20]}...")
+        print(f"AI Reading: Processing text: {text[:20]}...")
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -64,7 +64,7 @@ class AIReadingClient:
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        self.logger.error(f"OpenRouter API Error: {response.status} - {error_text}")
+                        print(f"OpenRouter API Error: {response.status} - {error_text}")
                         return text # エラー時は元のテキストを返す
 
                     data = await response.json()
@@ -73,11 +73,13 @@ class AIReadingClient:
                     # JSONパース
                     try:
                         json_content = json.loads(content)
-                        return json_content.get("yomi_katakana", text).strip()
+                        result = json_content.get("yomi_katakana", text).strip()
+                        print(f"AI Reading Result: {text} -> {result}")
+                        return result
                     except json.JSONDecodeError:
-                        self.logger.warning(f"Failed to parse JSON response: {content}")
+                        print(f"Failed to parse JSON response: {content}")
                         return content.strip() # パース失敗時はそのまま返す
 
         except Exception as e:
-            self.logger.error(f"Failed to get AI reading: {e}")
+            print(f"Failed to get AI reading: {e}")
             return text # エラー時は元のテキストを返す
