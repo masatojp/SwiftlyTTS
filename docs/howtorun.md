@@ -38,6 +38,16 @@
    docker compose down
    ```
 
+### AI読み仮名判定 (Optional)
+OpenRouterのAPIを使用することで、漢字や英語の読み方をAIで判定し、より自然な発音に変換できます。
+
+`.env` に以下の設定を追加してください:
+```env
+OPENROUTER_API_KEY=sk-or-v1-xxxxxxxx...
+OPENROUTER_MODEL_NAME=google/gemini-2.0-flash-exp:free # 任意のモデルを指定可能
+```
+- APIキーが設定されていない場合は、AI機能はスキップされ、通常の辞書処理のみが行われます。
+
 ## 既存のDB・VOICEVOXを使用する場合 (アプリのみ起動)
 すでに PostgreSQL や VOICEVOX サーバーが稼働している場合は、アプリ単体のコンテナをビルドして接続できます。
 
