@@ -15,10 +15,13 @@ class AIReadingClient:
         AIを使用してテキストを読みビ（ひらがな・カタカナのみ）に変換する
         """
         if not self.api_key:
+            self.logger.info("AI Reading: Skipped (No API Key configured)")
             return text
 
         if not text or not text.strip():
             return text
+        
+        self.logger.info(f"AI Reading: Processing text: {text[:20]}...")
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
