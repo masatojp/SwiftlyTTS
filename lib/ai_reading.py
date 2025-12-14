@@ -28,17 +28,17 @@ class AIReadingClient:
         }
 
         system_prompt = (
-            "あなたは日本語の読み上げボットのためのテキスト処理エンジンです。\n"
-            "入力されたテキストを、音声合成エンジンが自然に読める「読み仮名（ひらがな、またはカタカナ）」に変換して出力してください。\n"
-            "以下のルールを厳守してください：\n"
-            "1. 出力は変換後のテキストのみを含めること。説明や引用符は一切不要。\n"
-            "2. 漢字はひらがなに変換する。\n"
-            "3. 英語やアルファベットは、自然な発音に近いカタカナに変換する（例: Apple -> アップル）。\n"
-            "4. 数字はそのまま、または文脈に応じて読み下す。\n"
-            "5. 絵文字や記号は、読み上げに不要なら削除するか、意味を表す言葉（「えがお」「わら」など）に変換する。\n"
-            "6. 文脈を考慮し、自然なアクセントやイントネーションになるような表記を目指す。\n"
-            "7. 元のテキストが既にひらがな・カタカナのみの場合はそのまま出力する。\n"
-            "8. 「｟」と「｠」で囲まれたテキストは、手動辞書による置換結果です。この部分は**絶対に**変更せず、囲まれたまま出力してください（例: input: ｟固定｠だよ -> output: ｟固定｠だよ）。"
+            "あなたは日本語のテキスト読み上げ（TTS）エンジンのためのプリプロセッサです。入力された日本語テキストを解析し、以下のJSON形式で出力してください。\n\n"
+            "Format:\n"
+            "{\n"
+            "  \"original\": \"元のテキスト\",\n"
+            "  \"yomi_katakana\": \"カタカナ変換後のテキスト（数字やアルファベットもカタカナ読み・句読点は維持・漢字はひらがな等に開く）\"\n"
+            "}\n\n"
+            "Rule:\n"
+            "1. 数字やアルファベットは、文脈に応じて自然な読み仮名（カタカナ）にする。\n"
+            "2. 絵文字や記号は、読み上げに不要なら削除するか、意味を表す言葉に変換する。\n"
+            "3. 文脈を考慮し、自然なアクセントやイントネーションになるような表記を目指す。\n"
+            "4. 「｟」と「｠」で囲まれたテキストは、手動辞書による置換結果です。この部分は**絶対に**変更せず、囲まれたまま出力してください（例: input: ｟固定｠だよ -> output: ｟固定｠だよ）。"
         )
 
         payload = {
@@ -47,8 +47,9 @@ class AIReadingClient:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}
             ],
-            "temperature": 0.3, # 読みの安定性のため低めに
+            "temperature": 0.1, # 安定性のため低く設定
             "max_tokens": 500,
+            "response_format": {"type": "json_object"} # JSONモードを有効化
         }
 
         try:
@@ -65,7 +66,15 @@ class AIReadingClient:
 
                     data = await response.json()
                     content = data["choices"][0]["message"]["content"]
-                    return content.strip()
+                    
+                    # JSONパース
+                    try:
+                        json_content = json.loads(content)
+                        return json_content.get("yomi_katakana", text).strip()
+                    except json.JSONDecodeError:
+                        self.logger.warning(f"Failed to parse JSON response: {content}")
+                        return content.strip() # パース失敗時はそのまま返す
+
         except Exception as e:
             self.logger.error(f"Failed to get AI reading: {e}")
             return text # エラー時は元のテキストを返す
