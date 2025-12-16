@@ -39,8 +39,8 @@ class AIReadingClient:
             "}\n\n"
             "Rule (AquesTalk風記法):\n"
             "1. **すべての文字を『カタカナ』に変換**してください（漢字・ひらがな・英語・数字すべて）。\n"
-            "2. **アクセント句は `/` (スラッシュ) または `、` (読点) で区切る**。\n"
-            "3. **アクセント位置を `'` (シングルクォート) で指定する**。**全てのアクセント句（1文字の助詞含む）には必ずアクセント位置を1つ指定すること**。\n"
+            "2. **アクセント句は `/` (スラッシュ) で区切る**（極力 `/` を使用し、 `、` は避ける）。\n"
+            "3. **アクセント位置を `'` (シングルクォート) で指定する**。**全てのアクセント句（1文字の助詞含む）には必ずアクセント位置を1つだけ指定すること**（複数回指定は禁止）。\n"
             "4. アクセント句末に `？` (全角)を入れると疑問文の発音になる。\n"
             "5. カナの手前に `_` (アンダースコア) を入れると無声化される。\n"
             "6. 文全体を自然なイントネーションになるように構成する。\n"
@@ -87,28 +87,53 @@ class AIReadingClient:
                         self.logger.info(f"AI Reading Result (Raw): {text} -> {result}")
 
                         # AquesTalk記法のバリデーションと修正
-                        # ルール: 全ての句（/区切り）に ' が含まれている必要がある（記号のみの場合は除く）
-                        # 句読点（、）や疑問符（？）はセパレータとして扱う
-                        
-                        # 簡易的な修正ロジック:
-                        # 1. / で分割
-                        # 2. 各要素について、さらに 、 で分割（あるいは、含むかどうかチェック）
-                        # 3. カナが含まれているのに ' がない場合、末尾に ' を付与する
+                        # ルール:
+                        # 1. 全ての句（/区切り）に ' が必ず1つだけ含まれている必要がある
+                        # 2. 複数の ' がある場合は最初の1つを残す（あるいは適切なルールで処理）
+                        # 3. ' がない場合は末尾（記号の前）に付与する
+                        # 4. 空の句は除去する
                         
                         checked_segments = []
+                        # まず区切り文字を統一（、を / に置換して処理しやすくする手もあるが、元の区切りを残したい）
+                        # ここでは簡易的に / で分割して処理
                         segments = result.split('/')
                         for seg in segments:
-                            # 句読点などでさらに分割される可能性があるが、まずは単純に
-                            # カナが含まれているか判定（簡易判定）
-                            has_kana = any('ァ' <= c <= 'ヶ' for c in seg)
-                            if has_kana and "'" not in seg:
+                            if not seg:
+                                continue # 空要素はスキップ
+                            
+                            # 句読点（、。）や疑問符（？）が含まれる場合の扱い
+                            # これらが区切り文字として機能する場合もあるが、VOICEVOXのis_kana=trueでは
+                            # 基本的に / 区切り推奨。AIには / 区切りを指示している。
+                            # もし AI が 、 を使ってきた場合、それも残すが、アクセントチェックは「カナの塊」ごとに行う必要がある。
+                            
+                            # 簡易実装: セグメント内にカナがあるか確認
+                            kanas = [c for c in seg if 'ァ' <= c <= 'ヶ']
+                            if not kanas:
+                                # 記号のみ（例: ？）の場合はそのまま
+                                checked_segments.append(seg)
+                                continue
+
+                            # アクセント記号の数をチェック
+                            accent_count = seg.count("'")
+                            
+                            if accent_count == 0:
                                 # アクセントがない場合、末尾（記号の前）に付与
-                                # もし末尾が ？ や 、 ならその前に
-                                if seg.endswith('？') or seg.endswith('、'):
-                                     checked_segments.append(seg[:-1] + "'" + seg[-1])
+                                if seg.endswith('？') or seg.endswith('、') or seg.endswith('。'):
+                                     # 末尾の記号を除いた部分の最後に ' を入れる
+                                     # ただし記号が連続する場合などを考慮して、後ろから見て最初のカナの後ろに入れるのが安全
+                                     # ここでは簡易的に「最後の1文字が記号ならその前」とする
+                                     fixed_seg = seg[:-1] + "'" + seg[-1]
+                                     checked_segments.append(fixed_seg)
                                 else:
                                      checked_segments.append(seg + "'")
+                            elif accent_count > 1:
+                                # アクセントが複数ある場合、最初の1つだけ残して他は削除する（単純化）
+                                # 例: "タンタア'ーン'ト" -> "タンタア'ーント"
+                                first_accent_index = seg.find("'")
+                                fixed_seg = seg[:first_accent_index+1] + seg[first_accent_index+1:].replace("'", "")
+                                checked_segments.append(fixed_seg)
                             else:
+                                # アクセントが1つだけある場合 (正常)
                                 checked_segments.append(seg)
                         
                         fixed_result = "/".join(checked_segments)
@@ -123,5 +148,6 @@ class AIReadingClient:
                         return content.strip() # パース失敗時はそのまま返す
 
         except Exception as e:
-            print(f"Failed to get AI reading: {e}")
+            self.logger.error(f"AI Reading Error: {e}")
             return text # エラー時は元のテキストを返す
+```
