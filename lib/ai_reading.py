@@ -39,19 +39,22 @@ class AIReadingClient:
             "}\n\n"
             "Rule (AquesTalk風記法):\n"
             "1. **すべての文字を『カタカナ』に変換**してください（漢字・ひらがな・英語・数字すべて）。\n"
-            "2. **アクセント句は `/` (スラッシュ) で区切る**（極力 `/` を使用し、 `、` は避ける）。\n"
-            "3. **アクセント位置を `'` (シングルクォート) で指定する**。**全てのアクセント句（1文字の助詞含む）には必ずアクセント位置を1つだけ指定すること**（複数回指定は禁止）。\n"
-            "4. アクセント句末に `？` (全角)を入れると疑問文の発音になる。\n"
-            "5. カナの手前に `_` (アンダースコア) を入れると無声化される。\n"
-            "6. 文全体を自然なイントネーションになるように構成する。\n"
-            "7. 「｟」と「｠」で囲まれたテキストは、手動辞書による置換結果です。この部分もAquesTalk記法に従ってカタカナ化・アクセント付与を行ってくださいが、意味が変わらないように注意してください。\n\n"
+            "2. **アクセント句は `/` (スラッシュ) で区切る**。\n"
+            "3. **アクセント位置を `'` (シングルクォート) で指定する**。**必ず文字の『直後』に付けること**（例: `テ'スト` はOK、 `'テスト` はNG）。各フレーズに必ず1つだけ指定する。\n"
+            "4. **アクセント型（イントネーション）の意識**:\n"
+            "   - **平板型**: 1文字目の次は高く、最後のアウトまで高い（例: 「ハナガ」→「ハ'ナガ」ではなく「ハナ'ガ」）。AquesTalkでは「ハナ'ガ」のように助詞の直前または語末にアクセントを置くことで平板を表現する。\n"
+            "   - **頭高型**: 1文字目が高く、2文字目以降下がる（例: 「イノチ」→「イ'ノチ」）。\n"
+            "   - **中高型**: 途中の文字が高く、その後下がる（例: 「アナタ」→「アナ'タ」）。\n"
+            "   - **尾高型**: 最後の文字が高く、助詞で下がる（平板と区別するため、単語単体では最後が高いが、助詞が付くと下がる。AquesTalkでは「ハナ'」）。\n"
+            "5. 疑問文は文末に `？` をつける。\n"
+            "6. 「｟」と「｠」で囲まれたテキストは、手動辞書による置換結果です。この部分もAquesTalk記法に従ってカタカナ化・アクセント付与を行ってくださいが、意味が変わらないように注意してください。\n\n"
             "Examples:\n"
             "input: ディープラーニングは万能薬ではありません\n"
             "output: {\"original\": \"ディープラーニングは万能薬ではありません\", \"yomi\": \"ディ'イプ/ラ'アニングワ/バンノ'オヤクデワ/アリマセ'ン\"}\n\n"
             "input: テスト：退出しました\n"
             "output: {\"original\": \"テスト：退出しました\", \"yomi\": \"テ'スト/タイシュツシマシ'タ\"}\n"
-            "input: そうだね\n"
-            "output: {\"original\": \"そうだね\", \"yomi\": \"ソ'オダネ\"}\n" # 短い文でもアクセント必須
+            "input: こんにちは\n"
+            "output: {\"original\": \"こんにちは\", \"yomi\": \"コンニチワ'\"}\n" # 平板（助詞なしだが挨拶なので平板っぽく処理、便宜上末尾）
         )
 
         payload = {
@@ -60,9 +63,9 @@ class AIReadingClient:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}
             ],
-            "temperature": 0.1, # 安定性のため低く設定
-            "max_tokens": 800, # トークン数を少し増やす
-            "response_format": {"type": "json_object"} # JSONモードを有効化
+            "temperature": 0.1,
+            "max_tokens": 800,
+            "response_format": {"type": "json_object"}
         }
 
         try:
@@ -75,7 +78,7 @@ class AIReadingClient:
                     if response.status != 200:
                         error_text = await response.text()
                         self.logger.error(f"OpenRouter API Error: {response.status} - {error_text}")
-                        return text # エラー時は元のテキストを返す
+                        return text
 
                     data = await response.json()
                     content = data["choices"][0]["message"]["content"]
@@ -87,66 +90,81 @@ class AIReadingClient:
                         self.logger.info(f"AI Reading Result (Raw): {text} -> {result}")
 
                         # AquesTalk記法のバリデーションと修正
-                        # ルール:
-                        # 1. 全ての句（/区切り）に ' が必ず1つだけ含まれている必要がある
-                        # 2. 複数の ' がある場合は最初の1つを残す（あるいは適切なルールで処理）
-                        # 3. ' がない場合は末尾（記号の前）に付与する
-                        # 4. 空の句は除去する
+                        # 厳格なルール適用:
+                        # 1. 使用可能な文字はカタカナ、長音(ー)、アクセント(')、区切り(/)、疑問符(？)のみ
+                        # 2. _ (無声化) はVOICEVOX互換性のため削除
+                        # 3. 句読点（、。）はスラッシュに置換
+                        # 4. ッ、ー の直後に ' は置かない
+                        # 5. 先頭の ' は削除（文字の後ろにつけるルール）
+                        # 6. 各フレーズに必ず1つの ' を含める
+                        # 7. 空フレーズ除去
+
+                        # Step 0: 記号置換
+                        result = result.replace("、", "/").replace("。", "/").replace("！", "/")
+                        result = result.replace(",", "/").replace(".", "/").replace("!", "/")
+                        result = result.replace("?", "？")
+
+                        # Step 1: 文字種フィルタリング ( _ を削除)
+                        valid_chars = set("アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポヴァィゥェォッャュョヮー'？/")
+                        cleaned_text = "".join([c for c in result if c in valid_chars])
                         
                         checked_segments = []
-                        # まず区切り文字を統一（、を / に置換して処理しやすくする手もあるが、元の区切りを残したい）
-                        # ここでは簡易的に / で分割して処理
-                        segments = result.split('/')
+                        segments = cleaned_text.split('/')
+                        
                         for seg in segments:
                             if not seg:
-                                continue # 空要素はスキップ
+                                continue 
                             
-                            # 句読点（、。）や疑問符（？）が含まれる場合の扱い
-                            # これらが区切り文字として機能する場合もあるが、VOICEVOXのis_kana=trueでは
-                            # 基本的に / 区切り推奨。AIには / 区切りを指示している。
-                            # もし AI が 、 を使ってきた場合、それも残すが、アクセントチェックは「カナの塊」ごとに行う必要がある。
+                            # Step 2: 不正なアクセント位置の修正
+                            # 先頭の ' を削除 ('ア -> ア)
+                            seg = seg.lstrip("'")
                             
-                            # 簡易実装: セグメント内にカナがあるか確認
-                            kanas = [c for c in seg if 'ァ' <= c <= 'ヶ']
+                            # ッ, ー の後ろの ' を削除 (ッ' -> ッ)
+                            seg = seg.replace("ッ'", "ッ").replace("ー'", "ー")
+
+                            # カナが含まれているかチェック
+                            kanas = [c for c in seg if 'ァ' <= c <= 'ヶ' or c == 'ー']
                             if not kanas:
-                                # 記号のみ（例: ？）の場合はそのまま
                                 checked_segments.append(seg)
                                 continue
 
                             # アクセント記号の数をチェック
                             accent_count = seg.count("'")
-                            
+
                             if accent_count == 0:
-                                # アクセントがない場合、末尾（記号の前）に付与
-                                if seg.endswith('？') or seg.endswith('、') or seg.endswith('。'):
-                                     # 末尾の記号を除いた部分の最後に ' を入れる
-                                     # ただし記号が連続する場合などを考慮して、後ろから見て最初のカナの後ろに入れるのが安全
-                                     # ここでは簡易的に「最後の1文字が記号ならその前」とする
-                                     fixed_seg = seg[:-1] + "'" + seg[-1]
-                                     checked_segments.append(fixed_seg)
+                                # アクセントがない場合、有効な箇所の最後（記号の手前）に付与
+                                insert_pos = len(seg)
+                                for i in range(len(seg) - 1, -1, -1):
+                                    if seg[i] not in "？":
+                                        insert_pos = i + 1
+                                        break
+                                
+                                # ッ, ー の後ろは避ける
+                                while insert_pos > 0 and seg[insert_pos-1] in "ッー":
+                                    insert_pos -= 1
+                                
+                                if insert_pos > 0:
+                                    seg = seg[:insert_pos] + "'" + seg[insert_pos:]
                                 else:
-                                     checked_segments.append(seg + "'")
+                                    pass
+
                             elif accent_count > 1:
-                                # アクセントが複数ある場合、最初の1つだけ残して他は削除する（単純化）
-                                # 例: "タンタア'ーン'ト" -> "タンタア'ーント"
-                                first_accent_index = seg.find("'")
-                                fixed_seg = seg[:first_accent_index+1] + seg[first_accent_index+1:].replace("'", "")
-                                checked_segments.append(fixed_seg)
-                            else:
-                                # アクセントが1つだけある場合 (正常)
-                                checked_segments.append(seg)
+                                # 最初の有効なアクセントを残す
+                                first_pos = seg.find("'")
+                                seg = seg[:first_pos+1] + seg[first_pos+1:].replace("'", "")
+                            
+                            checked_segments.append(seg)
                         
                         fixed_result = "/".join(checked_segments)
                         
                         if fixed_result != result:
                              self.logger.info(f"AI Reading Result (Fixed): {result} -> {fixed_result}")
 
-                        # AquesTalk記法であることを示すプレフィックスを付与
                         return f"AQUESTALK:{fixed_result}"
                     except json.JSONDecodeError:
                         self.logger.error(f"Failed to parse JSON response: {content}")
-                        return content.strip() # パース失敗時はそのまま返す
+                        return content.strip()
 
         except Exception as e:
             self.logger.error(f"AI Reading Error: {e}")
-            return text # エラー時は元のテキストを返す
+            return text
