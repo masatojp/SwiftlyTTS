@@ -150,4 +150,3 @@ class AIReadingClient:
         except Exception as e:
             self.logger.error(f"AI Reading Error: {e}")
             return text # エラー時は元のテキストを返す
-```
