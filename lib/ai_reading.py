@@ -40,7 +40,7 @@ class AIReadingClient:
             "Rule (AquesTalk風記法):\n"
             "1. **すべての文字を『カタカナ』に変換**してください（漢字・ひらがな・英語・数字すべて）。\n"
             "2. **アクセント句は `/` (スラッシュ) または `、` (読点) で区切る**。\n"
-            "3. **アクセント位置を `'` (シングルクォート) で指定する**。全てのアクセント句にはアクセント位置を1つ指定する。\n"
+            "3. **アクセント位置を `'` (シングルクォート) で指定する**。**全てのアクセント句（1文字の助詞含む）には必ずアクセント位置を1つ指定すること**。\n"
             "4. アクセント句末に `？` (全角)を入れると疑問文の発音になる。\n"
             "5. カナの手前に `_` (アンダースコア) を入れると無声化される。\n"
             "6. 文全体を自然なイントネーションになるように構成する。\n"
@@ -50,6 +50,8 @@ class AIReadingClient:
             "output: {\"original\": \"ディープラーニングは万能薬ではありません\", \"yomi\": \"ディ'イプ/ラ'アニングワ/バンノ'オヤクデワ/アリマセ'ン\"}\n\n"
             "input: テスト：退出しました\n"
             "output: {\"original\": \"テスト：退出しました\", \"yomi\": \"テ'スト/タイシュツシマシ'タ\"}\n"
+            "input: そうだね\n"
+            "output: {\"original\": \"そうだね\", \"yomi\": \"ソ'オダネ\"}\n" # 短い文でもアクセント必須
         )
 
         payload = {
@@ -59,7 +61,7 @@ class AIReadingClient:
                 {"role": "user", "content": text}
             ],
             "temperature": 0.1, # 安定性のため低く設定
-            "max_tokens": 500,
+            "max_tokens": 800, # トークン数を少し増やす
             "response_format": {"type": "json_object"} # JSONモードを有効化
         }
 
@@ -72,7 +74,7 @@ class AIReadingClient:
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        print(f"OpenRouter API Error: {response.status} - {error_text}")
+                        self.logger.error(f"OpenRouter API Error: {response.status} - {error_text}")
                         return text # エラー時は元のテキストを返す
 
                     data = await response.json()
@@ -82,11 +84,42 @@ class AIReadingClient:
                     try:
                         json_content = json.loads(content)
                         result = json_content.get("yomi", text).strip()
-                        print(f"AI Reading Result: {text} -> {result}")
+                        self.logger.info(f"AI Reading Result (Raw): {text} -> {result}")
+
+                        # AquesTalk記法のバリデーションと修正
+                        # ルール: 全ての句（/区切り）に ' が含まれている必要がある（記号のみの場合は除く）
+                        # 句読点（、）や疑問符（？）はセパレータとして扱う
+                        
+                        # 簡易的な修正ロジック:
+                        # 1. / で分割
+                        # 2. 各要素について、さらに 、 で分割（あるいは、含むかどうかチェック）
+                        # 3. カナが含まれているのに ' がない場合、末尾に ' を付与する
+                        
+                        checked_segments = []
+                        segments = result.split('/')
+                        for seg in segments:
+                            # 句読点などでさらに分割される可能性があるが、まずは単純に
+                            # カナが含まれているか判定（簡易判定）
+                            has_kana = any('ァ' <= c <= 'ヶ' for c in seg)
+                            if has_kana and "'" not in seg:
+                                # アクセントがない場合、末尾（記号の前）に付与
+                                # もし末尾が ？ や 、 ならその前に
+                                if seg.endswith('？') or seg.endswith('、'):
+                                     checked_segments.append(seg[:-1] + "'" + seg[-1])
+                                else:
+                                     checked_segments.append(seg + "'")
+                            else:
+                                checked_segments.append(seg)
+                        
+                        fixed_result = "/".join(checked_segments)
+                        
+                        if fixed_result != result:
+                             self.logger.info(f"AI Reading Result (Fixed): {result} -> {fixed_result}")
+
                         # AquesTalk記法であることを示すプレフィックスを付与
-                        return f"AQUESTALK:{result}"
+                        return f"AQUESTALK:{fixed_result}"
                     except json.JSONDecodeError:
-                        print(f"Failed to parse JSON response: {content}")
+                        self.logger.error(f"Failed to parse JSON response: {content}")
                         return content.strip() # パース失敗時はそのまま返す
 
         except Exception as e:
