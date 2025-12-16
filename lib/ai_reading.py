@@ -35,19 +35,21 @@ class AIReadingClient:
             "Format:\n"
             "{\n"
             "  \"original\": \"元のテキスト\",\n"
-            "  \"yomi\": \"変換後のテキスト（すべてひらがなで出力・単語はつなげる）\"\n"
+            "  \"yomi\": \"変換後のテキスト（AquesTalk風記法）\"\n"
             "}\n\n"
-            "Rule:\n"
-            "1. **すべての文字を「ひらがな」に変換**してください（漢字・カタカナ・英語・数字すべて）。\n"
-            "2. **単語と単語の間にスペースを入れない**でください。\n"
-            "3. 句読点（、。）は残してください。\n"
-            "4. アクセントやイントネーションが自然になるように変換してください。\n"
-            "5. 「｟」と「｠」で囲まれたテキストは、手動辞書による置換結果です。この部分は**絶対に**変更せず、囲まれたまま出力してください（例: input: ｟固定｠だよ -> output: ｟固定｠だよ）。\n\n"
+            "Rule (AquesTalk風記法):\n"
+            "1. **すべての文字を『カタカナ』に変換**してください（漢字・ひらがな・英語・数字すべて）。\n"
+            "2. **アクセント句は `/` (スラッシュ) または `、` (読点) で区切る**。\n"
+            "3. **アクセント位置を `'` (シングルクォート) で指定する**。全てのアクセント句にはアクセント位置を1つ指定する。\n"
+            "4. アクセント句末に `？` (全角)を入れると疑問文の発音になる。\n"
+            "5. カナの手前に `_` (アンダースコア) を入れると無声化される。\n"
+            "6. 文全体を自然なイントネーションになるように構成する。\n"
+            "7. 「｟」と「｠」で囲まれたテキストは、手動辞書による置換結果です。この部分もAquesTalk記法に従ってカタカナ化・アクセント付与を行ってくださいが、意味が変わらないように注意してください。\n\n"
             "Examples:\n"
+            "input: ディープラーニングは万能薬ではありません\n"
+            "output: {\"original\": \"ディープラーニングは万能薬ではありません\", \"yomi\": \"ディ'イプ/ラ'アニングワ/バンノ'オヤクデワ/アリマセ'ン\"}\n\n"
             "input: テスト：退出しました\n"
-            "output: {\"original\": \"テスト：退出しました\", \"yomi\": \"てすと：たいしゅつしました\"}\n\n"
-            "input: Discordの使い方\n"
-            "output: {\"original\": \"Discordの使い方\", \"yomi\": \"でぃすこーどのつかいかた\"}\n"
+            "output: {\"original\": \"テスト：退出しました\", \"yomi\": \"テ'スト/タイシュツシマシ'タ\"}\n"
         )
 
         payload = {
@@ -81,7 +83,8 @@ class AIReadingClient:
                         json_content = json.loads(content)
                         result = json_content.get("yomi", text).strip()
                         print(f"AI Reading Result: {text} -> {result}")
-                        return result
+                        # AquesTalk記法であることを示すプレフィックスを付与
+                        return f"AQUESTALK:{result}"
                     except json.JSONDecodeError:
                         print(f"Failed to parse JSON response: {content}")
                         return content.strip() # パース失敗時はそのまま返す

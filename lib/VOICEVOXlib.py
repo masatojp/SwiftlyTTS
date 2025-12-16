@@ -77,7 +77,7 @@ class VOICEVOXLib:
                 response.raise_for_status()
                 return await response.json()
 
-    async def synthesize(self, text, speaker_id, output_path, speed: float = 1.0):
+    async def synthesize(self, text, speaker_id, output_path, speed: float = 1.0, is_kana: bool = False):
         """
         Synthesize speech from text using the VOICEVOX engine.
 
@@ -86,6 +86,7 @@ class VOICEVOXLib:
             speaker_id (int): The ID of the speaker to use.
             output_path (str): Path to save the output WAV file.
             speed (float): Speed of the synthesized voice (default 1.0).
+            is_kana (bool): If True, treats text as AquesTalk notation using accent_phrases endpoint.
         """
         # .envを毎回再読込してURLリストを更新
         self.base_urls = self._load_base_urls()
@@ -99,23 +100,56 @@ class VOICEVOXLib:
                 try:
                     async with aiohttp.ClientSession() as session:
                         start_time = time.perf_counter()
-                        # Step 1: Generate audio query
-                        async with session.post(
-                            f"{base_url}/audio_query",
-                            params={"text": text, "speaker": speaker_id}
-                        ) as query_response:
-                            if query_response.status >= 500:
-                                raise aiohttp.ClientResponseError(
-                                    request_info=query_response.request_info,
-                                    history=query_response.history,
-                                    status=query_response.status,
-                                    message=f"HTTP {query_response.status}",
-                                    headers=query_response.headers
-                                )
-                            query_response.raise_for_status()
-                            audio_query = await query_response.json()
-                            if "speedScale" in audio_query:
-                                audio_query["speedScale"] = speed
+                        
+                        audio_query = None
+                        if is_kana:
+                            # AquesTalk記法(is_kana=True)の場合の特別フロー
+                            # Step 1-A: Get base query (using dummy text or same text)
+                            async with session.post(
+                                f"{base_url}/audio_query",
+                                params={"text": "dummy", "speaker": speaker_id}
+                            ) as query_response:
+                                if query_response.status >= 500:
+                                    raise aiohttp.ClientResponseError(
+                                        request_info=query_response.request_info,
+                                        history=query_response.history,
+                                        status=query_response.status,
+                                        message=f"HTTP {query_response.status}",
+                                        headers=query_response.headers
+                                    )
+                                query_response.raise_for_status()
+                                audio_query = await query_response.json()
+
+                            # Step 1-B: Get accent phrases from AquesTalk notation
+                            async with session.post(
+                                f"{base_url}/accent_phrases",
+                                params={"text": text, "speaker": speaker_id, "is_kana": "true"}
+                            ) as phrases_response:
+                                phrases_response.raise_for_status()
+                                new_phrases = await phrases_response.json()
+                            
+                            # Replace accent_phrases in the query
+                            audio_query["accent_phrases"] = new_phrases
+                        else:
+                            # 通常フロー
+                            # Step 1: Generate audio query
+                            async with session.post(
+                                f"{base_url}/audio_query",
+                                params={"text": text, "speaker": speaker_id}
+                            ) as query_response:
+                                if query_response.status >= 500:
+                                    raise aiohttp.ClientResponseError(
+                                        request_info=query_response.request_info,
+                                        history=query_response.history,
+                                        status=query_response.status,
+                                        message=f"HTTP {query_response.status}",
+                                        headers=query_response.headers
+                                    )
+                                query_response.raise_for_status()
+                                audio_query = await query_response.json()
+                        
+                        if "speedScale" in audio_query:
+                            audio_query["speedScale"] = speed
 
                         # Step 2: Synthesize audio
                         async with session.post(
@@ -247,13 +281,14 @@ class VOICEVOXLib:
                     continue
         raise RuntimeError(f"All VOICEVOX URLs failed for synthesis: {text[:50]}... Last error: {last_error}")
 
-    async def synthesize_bytes(self, text, speaker_id) -> tuple[str, bytes]:
+    async def synthesize_bytes(self, text, speaker_id, is_kana: bool = False) -> tuple[str, bytes]:
         """
         Synthesize speech from text and return audio data as bytes.
 
         Args:
             text (str): The text to synthesize.
             speaker_id (int): The ID of the speaker to use.
+            is_kana (bool): If True, treats text as AquesTalk notation using accent_phrases endpoint.
 
         Returns:
             tuple[str, bytes]: The used base URL and the synthesized speech audio data.
@@ -270,23 +305,55 @@ class VOICEVOXLib:
                     async with aiohttp.ClientSession() as session:
                         start_time = time.perf_counter()
 
-                        # Step 1: Generate audio query
-                        async with session.post(
-                            f"{base_url}/audio_query",
-                            params={"text": text, "speaker": speaker_id}
-                        ) as query_response:
-                            if query_response.status >= 500:
-                                raise aiohttp.ClientResponseError(
-                                    request_info=query_response.request_info,
-                                    history=query_response.history,
-                                    status=query_response.status,
-                                    message=f"HTTP {query_response.status}",
-                                    headers=query_response.headers
-                                )
-                            query_response.raise_for_status()
-                            audio_query = await query_response.json()
+                        audio_query = None
+                        if is_kana:
+                            # AquesTalk記法(is_kana=True)の場合の特別フロー
+                            # Step 1-A: Get base query (using dummy text or same text)
+                            # accent_phrasesで上書きするため、ここでは枠を取得するだけ
+                            async with session.post(
+                                f"{base_url}/audio_query",
+                                params={"text": "dummy", "speaker": speaker_id}
+                            ) as query_response:
+                                if query_response.status >= 500:
+                                    raise aiohttp.ClientResponseError(
+                                        request_info=query_response.request_info,
+                                        history=query_response.history,
+                                        status=query_response.status,
+                                        message=f"HTTP {query_response.status}",
+                                        headers=query_response.headers
+                                    )
+                                query_response.raise_for_status()
+                                audio_query = await query_response.json()
 
-                        # Step 2: Synthesize audio
+                            # Step 1-B: Get accent phrases from AquesTalk notation
+                            async with session.post(
+                                f"{base_url}/accent_phrases",
+                                params={"text": text, "speaker": speaker_id, "is_kana": "true"}
+                            ) as phrases_response:
+                                phrases_response.raise_for_status()
+                                new_phrases = await phrases_response.json()
+                            
+                            # Replace accent_phrases in the query
+                            audio_query["accent_phrases"] = new_phrases
+                        else:
+                            # 通常フロー
+                            # Step 1: Generate audio query
+                            async with session.post(
+                                f"{base_url}/audio_query",
+                                params={"text": text, "speaker": speaker_id}
+                            ) as query_response:
+                                if query_response.status >= 500:
+                                    raise aiohttp.ClientResponseError(
+                                        request_info=query_response.request_info,
+                                        history=query_response.history,
+                                        status=query_response.status,
+                                        message=f"HTTP {query_response.status}",
+                                        headers=query_response.headers
+                                    )
+                                query_response.raise_for_status()
+                                audio_query = await query_response.json()
+
+                        # Step 2: Synthesize audio (Common)
                         async with session.post(
                             f"{base_url}/synthesis",
                             params={"speaker": speaker_id},

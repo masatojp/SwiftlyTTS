@@ -656,12 +656,27 @@ class VoiceReadCog(commands.Cog):
                     if dictionary_cog:
                         user_name = await dictionary_cog.apply_dictionary(user_name, guild_id)
                     text = f"{user_name}、{text}"
+                
+                # AquesTalk記法判定
+                is_kana = False
+                if text.startswith("AQUESTALK:"):
+                    text = text.replace("AQUESTALK:", "", 1)
+                    is_kana = True
+
                 tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
                 speed = await self.db.get_server_voice_speed(guild_id)
                 if speed is None:
                     speed = 1.0
                 try:
-                    saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed)
+                    # voicelib.synthesize に is_kana を渡す（VOICEVOXLib側も対応が必要）
+                    # 注: VOICEVOXLib.synthesize はまだ is_kana を受け取れないため、synthesize_bytes同様に対応が必要
+                    #     ここでは synthesize_bytes を使うか、synthesize を改修する必要がある。
+                    #     実装計画に基づき VOICEVOXLib.synthesize も改修する想定で呼び出す。
+                    if hasattr(self.voicelib, 'synthesize'):
+                         # voicelib.synthesizeのシグネチャ変更が必要だが、
+                         # 既存コードへの影響を最小限にするため、**kwargsで受けるか、明示的に追加する。
+                         # 今回は VOICEVOXLib.synthesize も is_kana 対応させる。
+                        saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed, is_kana=is_kana)
                 except Exception as e:
                     self.logger.error(f"TTS synth failed for guild {guild_id}: {e}")
                     traceback.print_exc()
