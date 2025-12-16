@@ -78,8 +78,26 @@ class AIReadingClient:
                     
                     # JSONパース
                     try:
-                        json_content = json.loads(content)
-                        result = json_content.get("yomi", text).strip()
+                        # Markdownのコードブロックがある場合は削除
+                        if content.startswith("```json"):
+                            content = content[7:]
+                        if content.startswith("```"):
+                            content = content[3:]
+                        if content.endswith("```"):
+                            content = content[:-3]
+                        
+                        json_content = json.loads(content.strip())
+                        
+                        if isinstance(json_content, list):
+                            if len(json_content) > 0 and isinstance(json_content[0], dict):
+                                result = json_content[0].get("yomi", text).strip()
+                            else:
+                                result = text
+                        elif isinstance(json_content, dict):
+                            result = json_content.get("yomi", text).strip()
+                        else:
+                            result = text
+                            
                         print(f"AI Reading Result: {text} -> {result}")
                         return result
                     except json.JSONDecodeError:
