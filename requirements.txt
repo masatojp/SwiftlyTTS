@@ -1,4 +1,4 @@
-discord.py>=2.7.0
+discord.py[voice]>=2.7.0
 pytz
 python-dotenv
 asyncpg
