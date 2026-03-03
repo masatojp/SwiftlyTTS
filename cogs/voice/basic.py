@@ -404,10 +404,17 @@ class VoiceReadCog(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer()
+        # コマンドの読み上げログ
+        self.logger.info(f"=== [TTS Request: /read] ===")
+        self.logger.info(f"Input : {text}")
+        
         # テキストを辞書で変換
         dictionary_cog = self.bot.get_cog("DictionaryCog")
         if dictionary_cog:
-            text = await dictionary_cog.apply_dictionary(text, interaction.guild.id)
+            converted_text = await dictionary_cog.apply_dictionary(text, interaction.guild.id)
+            self.logger.info(f"Parsed: {converted_text} (AI dict applied: {str(text != converted_text)})")
+            text = converted_text
+
         try:
             tmp_wav = f"tmp/tmp_{uuid.uuid4()}_read.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
             speed = await self.db.get_server_voice_speed(interaction.guild.id)
@@ -415,6 +422,7 @@ class VoiceReadCog(commands.Cog):
                 speed = 1.0
             try:
                 saved_path = await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed)
+                self.logger.info(f"Output: Success (Speaker ID: {self.speaker_id}, File: {saved_path})")
             except Exception:
                 traceback.print_exc()
                 self.bot.error_counter += 1  # エラーカウンターをインクリメント
@@ -644,10 +652,17 @@ class VoiceReadCog(commands.Cog):
                     await asyncio.sleep(0.1)
                     continue
                 text, speaker_id, user_name = item
+                # キューの読み上げログ
+                self.logger.info(f"=== [TTS Request: Message queue] ===")
+                self.logger.info(f"Input : {text}")
+
                 # テキストを辞書で変換
                 dictionary_cog = self.bot.get_cog("DictionaryCog")
                 if dictionary_cog:
-                    text = await dictionary_cog.apply_dictionary(text, guild_id)
+                    converted_text = await dictionary_cog.apply_dictionary(text, guild_id)
+                    self.logger.info(f"Parsed: {converted_text} (AI dict applied: {str(text != converted_text)})")
+                    text = converted_text
+
                 # ずんだもんの場合、configでユーザー名読み上げ有効なら先頭に追加
                 config = getattr(self.bot, "config", {})
                 zundamon_read_username_enabled = config.get("zundamon_read_username_enabled", False)
@@ -661,6 +676,7 @@ class VoiceReadCog(commands.Cog):
                     speed = 1.0
                 try:
                     saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed)
+                    self.logger.info(f"Output: Success (Speaker ID: {speaker_id}, File: {saved_path})")
                 except Exception as e:
                     self.logger.error(f"TTS synth failed for guild {guild_id}: {e}")
                     traceback.print_exc()
