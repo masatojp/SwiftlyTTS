@@ -9,7 +9,7 @@
 # オプション:
 # - SHARD_COUNT: シャード数 (デフォルト 3)
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # 明示的にHOMEを定義
 ENV HOME=/root
@@ -46,22 +46,22 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
 # maturinをPATHに追加
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# maturinインストール
-RUN pip install maturin
+# uvとmaturinインストール
+RUN pip install uv maturin
 
 # 作業ディレクトリ
 WORKDIR /app
 
 # 依存関係を先にコピーしてインストール（キャッシュを活用）
 COPY requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip setuptools wheel \
-    && pip install --upgrade --no-cache-dir -r /app/requirements.txt
+RUN uv pip install --system --upgrade pip setuptools wheel \
+    && uv pip install --system --no-cache-dir -r /app/requirements.txt
 
 # アプリケーションコードをコピー
 COPY . /app
 
 # Rustバインディングをリリースビルド
-RUN cd lib/rust_lib && maturin build --release && pip install target/wheels/*.whl --force-reinstall
+RUN cd lib/rust_lib && maturin build --release && uv pip install --system target/wheels/*.whl --reinstall
 
 # 実行ユーザーを作成し、所有権を変更
 RUN groupadd -g ${GID} ${USER} || true \
