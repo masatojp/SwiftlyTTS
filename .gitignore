@@ -5,3 +5,4 @@ __pycache__/
 *.wav
 .vscode/
 .DS_Store
+.config.yml
