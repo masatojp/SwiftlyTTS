@@ -128,7 +128,6 @@ class VoiceReadCog(commands.Cog):
                         continue
                     await guild.change_voice_state(channel=vc_channel, self_mute=False, self_deaf=True)
                     self.tts_channels[guild.id] = tts_channel.id
-                    self.message_queues[guild.id] = asyncio.Queue()
                     self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
                 except Exception as e:
                     self.logger.error(f"Failed to reconnect to VC in guild {guild.id}: {e}")
