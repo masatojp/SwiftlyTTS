@@ -1,9 +1,20 @@
-# SwiftlyTTS Dockerfile (Optimized Multi-stage Build)
+# SwiftlyTTS Discord ボットを実行するための Dockerfile
+# 使用方法:
+# - ビルド: docker build -t swiftlytts-bot:latest .
+# - 実行 (.env をマウントするか、環境変数を渡します):
+# docker run --rm -e DISCORD_TOKEN=... -e DB_HOST=... -e DB_USER=... -e DB_PASSWORD=... swiftlytts-bot:latest
+# 必須の環境変数 (少なくとも):
+# - DISCORD_TOKEN: Discord ボットトークン
+# - DB_HOST、DB_PORT、DB_NAME、DB_USER、DB_PASSWORD: PostgreSQL 接続
+# オプション:
+# - SHARD_COUNT: シャード数 (デフォルト 3)
 
-# --- Stage 1: Builder ---
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim
 
-# Prevent writing .pyc files
+# 明示的にHOMEを定義
+ENV HOME=/root
+
+# 非バッファリング（ログをすぐ出力）と.pycファイル生成抑制
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
@@ -22,12 +33,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Create a virtual environment for dependencies
-RUN python -m venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH"
-
-# Install maturin separately
-RUN pip install maturin
+# uvとmaturinインストール
+RUN pip install uv maturin
 
 # Copy requirements and install python dependencies
 COPY requirements.txt .
@@ -51,25 +58,16 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 
-# Create non-root user
-ARG USER=bot
-ARG UID=1000
-ARG GID=1000
-
-RUN groupadd -g ${GID} ${USER} \
-    && useradd -u ${UID} -g ${GID} -m ${USER}
-
-# Install runtime dependencies (FFmpeg is required for voice)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# 依存関係を先にコピーしてインストール（キャッシュを活用）
+COPY requirements.txt /app/requirements.txt
+RUN uv pip install --system --upgrade pip setuptools wheel \
+    && uv pip install --system --no-cache-dir -r /app/requirements.txt
 
 # Copy virtual environment from builder
 COPY --from=builder --chown=${USER}:${USER} /app/.venv /app/.venv
 
-# Copy application code
-COPY --chown=${USER}:${USER} . .
+# Rustバインディングをリリースビルド
+RUN cd lib/rust_lib && maturin build --release && uv pip install --system target/wheels/*.whl --reinstall
 
 # Create tmp directory with correct permissions
 RUN mkdir -p /app/tmp && chown -R ${USER}:${USER} /app/tmp
