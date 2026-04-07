@@ -26,6 +26,12 @@ class AIReadingClient:
         if not text or not text.strip():
             return text
             
+        # 漢字・英数字・一部の記号が含まれていないかチェック（ひらがな・カタカナのみの場合はAIをスキップして高速化）
+        import re
+        if not re.search(r'[a-zA-Z0-9０-９ａ-ｚＡ-Ｚ\u4e00-\u9faf]', text):
+            # 漢字・英数字がない場合はそのままのテキストで十分読める可能性が高い
+            return text
+
         # キャッシュのチェック
         if text in self.cache:
             self.cache.move_to_end(text)
@@ -67,7 +73,8 @@ class AIReadingClient:
             "response_format": {"type": "json_object"} # JSONモードを有効化
         }
 
-        timeout_limit = aiohttp.ClientTimeout(total=4) # 4秒タイムアウト
+        # APIの混雑や生成時間などを考慮し、タイムアウトを12秒に延長
+        timeout_limit = aiohttp.ClientTimeout(total=12) 
         try:
             async with aiohttp.ClientSession(timeout=timeout_limit) as session:
                 async with session.post(
