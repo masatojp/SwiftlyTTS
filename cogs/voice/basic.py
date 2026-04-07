@@ -717,8 +717,8 @@ class VoiceReadCog(commands.Cog):
         """メッセージを読み上げキューに追加"""
         if await self.is_banned(message.author.id):
             return  # BANされたユーザーのメッセージは無視
-        # BotやDMは無視
-        if message.author.bot or not message.guild:
+        # 自分自身のメッセージやDMは無視
+        if message.author.id == self.bot.user.id or not message.guild:
             return
         # joinコマンドが実行されたチャンネルか確認
         tts_channel_id = self.tts_channels.get(message.guild.id)
