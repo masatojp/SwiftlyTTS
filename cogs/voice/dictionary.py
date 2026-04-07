@@ -6,6 +6,7 @@ import re
 from discord.ui import View, Button
 import asyncio
 import time
+from lib.ai_reading import AIReadingClient  # 追加
 
 class DictionaryCog(commands.Cog):
     def __init__(self, bot):
@@ -18,6 +19,7 @@ class DictionaryCog(commands.Cog):
         self.cache_lock = asyncio.Lock()
         self.cache_task = None
         self.cache_last_update = 0
+        self.ai_client = AIReadingClient() # AIクライアント初期化
 
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
@@ -305,20 +307,28 @@ class DictionaryCog(commands.Cog):
         async with self.cache_lock:
             global_rows = list(self.global_dict_cache)
         for row in global_rows:
-            text = text.replace(row['key'], row['value'])
+            # 辞書適用結果をマーカーで囲む
+            text = text.replace(row['key'], f"｟{row['value']}｠")
         # サーバーごとの辞書をキャッシュから適用
         if guild_id is not None:
             rows = await self.get_server_dict(guild_id)
             for row in rows:
-                text = text.replace(row['key'], row['value'])
+                text = text.replace(row['key'], f"｟{row['value']}｠")
         # ユーザー辞書適用
         user_id = msg.author.id if msg else None
         if user_id is not None:
             user_rows = await self.get_user_dict(user_id)
             for row in user_rows:
-                text = text.replace(row['key'], row['value'])
+                text = text.replace(row['key'], f"｟{row['value']}｠")
         if len(text) > 70:
             text = text[:150] + "省略"
+        
+        # 最後にAIによる読み仮名変換を適用 (APIキー設定時のみ)
+        text = await self.ai_client.get_reading(text)
+        
+        # マーカーを除去
+        text = text.replace("｟", "").replace("｠", "")
+
         return text
 
 async def setup(bot):

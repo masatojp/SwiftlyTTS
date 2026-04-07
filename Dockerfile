@@ -18,38 +18,44 @@ ENV HOME=/root
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# build-time arguments for non-root user
-ARG USER=bot
-ARG UID=1000
-ARG GID=1000
+WORKDIR /app
 
-# 必要なシステムパッケージをインストール
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        build-essential \
-        gcc \
-        libpq-dev \
-        libsodium-dev \
-        libssl-dev \
-        libffi-dev \
-        python3-dev \
-        ffmpeg \
-        ca-certificates \
-        curl \
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    libffi-dev \
+    libssl-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Rustツールチェーンのインストール
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
-    && . /root/.cargo/env \
-    && rustup default stable
-
-# maturinをPATHに追加
+# Install Rust toolchain (required for some dependencies)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # uvとmaturinインストール
 RUN pip install uv maturin
 
-# 作業ディレクトリ
+# Copy requirements and install python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code to build Rust extension
+COPY . .
+
+# Build Rust extension
+WORKDIR /app/lib/rust_lib
+RUN maturin develop --release
+# Note: 'maturin develop' installs into the current venv
+
+# --- Stage 2: Runtime ---
+FROM python:3.11-slim AS runtime
+
+# Runtime environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PATH="/app/.venv/bin:$PATH"
+
 WORKDIR /app
 
 # 依存関係を先にコピーしてインストール（キャッシュを活用）
@@ -57,18 +63,17 @@ COPY requirements.txt /app/requirements.txt
 RUN uv pip install --system --upgrade pip setuptools wheel \
     && uv pip install --system --no-cache-dir -r /app/requirements.txt
 
-# アプリケーションコードをコピー
-COPY . /app
+# Copy virtual environment from builder
+COPY --from=builder --chown=${USER}:${USER} /app/.venv /app/.venv
 
 # Rustバインディングをリリースビルド
 RUN cd lib/rust_lib && maturin build --release && uv pip install --system target/wheels/*.whl --reinstall
 
-# 実行ユーザーを作成し、所有権を変更
-RUN groupadd -g ${GID} ${USER} || true \
-    && useradd -u ${UID} -g ${GID} -m ${USER} || true \
-    && chown -R ${USER}:${USER} /app
+# Create tmp directory with correct permissions
+RUN mkdir -p /app/tmp && chown -R ${USER}:${USER} /app/tmp
 
+# Switch to non-root user
 USER ${USER}
 
-# デフォルトコマンド
+# Default command
 CMD ["python", "bot.py"]

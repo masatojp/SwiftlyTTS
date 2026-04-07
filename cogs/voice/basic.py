@@ -57,6 +57,7 @@ class VoiceReadCog(commands.Cog):
         self.voicelib = VOICEVOXLib()
         self.speaker_id = 1
         self.tts_channels = {}      # {guild.id: channel.id}
+        self.message_queues = {}    # {guild.id: asyncio.Queue}
         self.queue_tasks = {}       # {guild.id: Task}
         self.rust_queue = RustQueueClient()
         self.db = PostgresDB()  # データベースインスタンスを初期化
@@ -684,7 +685,9 @@ class VoiceReadCog(commands.Cog):
                     self.bot.shard_error_counters[shard_id] += 1
                     continue
                 voice_client = guild.voice_client
-                if voice_client and not voice_client.is_playing():
+                if voice_client:
+                    while voice_client.is_playing():
+                        await asyncio.sleep(0.1)
                     audio_source = discord.FFmpegPCMAudio(saved_path)
                     voice_client.play(audio_source)
                     while voice_client.is_playing():

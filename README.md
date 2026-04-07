@@ -1,19 +1,28 @@
-# SwiftlyTTS
+# SwiftlyTTS Ver.Masato.JP
 
 > [!IMPORTANT]
-> このリポジトリは従来版としてアーカイブ扱いになります。
-> 今後の開発や機能更新は非公開リポジトリで行います。
-> ボットサービスは引き続き非公開リポジトリで開発を行い、運営されます。
-> 公開版は参考用として引き続き利用できます。
+> このリポジトリはアーカイブされたhttps://github.com/techfish-11/SwiftlyTTS のフォーク版です。
+> 現在も開発しており、主に生成AIを用いた開発を行っています。
 
 無駄のない読み上げBot
 
-https://discord.com/oauth2/authorize?client_id=1371465579780767824
+## 特徴
+- **AI読み仮名判定**: OpenRouter APIを使用して、文章の読み（漢字→ひらがな、英語→カタカナ）をAIが自動判別します。
+- **軽量・高速**: Rust製ライブラリとマルチスレッド処理による効率的な動作。
+- **VOICEVOX対応**: ずんだもんなどのVOICEVOXキャラクターを利用可能。
 
-使用方法: https://swiftlybot.com/commands
+## 実行方法
+詳細な手順は [docs/howtorun.md](docs/howtorun.md) を参照してください。
 
-# 実行方法
-[docs/howtorun.md](docs/howtorun.md) を参照してください。
+## クイックスタート (Docker Compose)
+1. リポジトリをクローン
+2. `.env` と `config.yml` を作成
+   ```bash
+   cp .env.example .env
+   cp config.yml.example config.yml
+   ```
+3. `.env` を編集してトークン等を設定
+4. 起動: `docker compose up -d`
 
 # ライセンス表記
 

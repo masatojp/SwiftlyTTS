@@ -1,73 +1,81 @@
-## ボット実行方法
-Swiftlyは、Docker、Docker Compose、Pterodactyl、もしくは直接実行できます。
+# ボット実行方法
 
-### Dockerで実行（推奨）
-1. PostgreSQLサーバーを立ち上げ、基本的な設定をする
-2. [.env](https://github.com/techfish-11/SwiftlyTTS/blob/main/.env.example)を書き込む。
-3. VOICEVOXサーバーを立ち上げる
-[VOICEVOX_engineのrepo](https://github.com/VOICEVOX/voicevox_engine)を参照してください
-4. Dockerイメージを実行する
-```bash
-docker run -d --env-file .env --name swiftlytts ghcr.io/techfish-11/swiftlytts-bot
+フォーク版のため、Docker Compose (Dockerfileビルド) での実行のみをサポートしています。
+
+## 必須要件
+- Docker Desktop または Docker Engine
+- Docker Compose
+
+## 手順
+
+1. リポジトリをクローンする
+   ```bash
+   git clone https://github.com/techfish-11/SwiftlyTTS.git
+   cd SwiftlyTTS
+   ```
+
+2. 必須ファイルの準備
+   `.env` と `config.yml` を作成します。
+   
+   ```bash
+   # 環境変数のみ設定
+   cp .env.example .env
+   # 設定ファイルを作成
+   cp config.yml.example config.yml
+   ```
+   
+   作成後、`.env` にBotトークンやDB接続情報、`config.yml` にPrefix設定などを記述してください。
+
+3. 起動する
+   Bot、PostgreSQL、VOICEVOX サーバーが一括で起動します。
+   ```bash
+   docker compose up -d
+   ```
+   ※ 初回起動時は Dockerfile のビルドが行われるため時間がかかります。
+
+4. 停止する
+   ```bash
+   docker compose down
+   ```
+
+### AI読み仮名判定 (Optional)
+OpenRouterのAPIを使用することで、漢字や英語の読み方をAIで判定し、より自然な発音に変換できます。
+
+`.env` に以下の設定を追加してください:
+```env
+OPENROUTER_API_KEY=sk-or-v1-xxxxxxxx...
+OPENROUTER_MODEL_NAME=google/gemini-2.0-flash-exp:free # 任意のモデルを指定可能
 ```
+- APIキーが設定されていない場合は、AI機能はスキップされ、通常の辞書処理のみが行われます。
 
-### 直接実行
+## 既存のDB・VOICEVOXを使用する場合 (アプリのみ起動)
+すでに PostgreSQL や VOICEVOX サーバーが稼働している場合は、アプリ単体のコンテナをビルドして接続できます。
 
-1. PostgreSQLサーバーを立ち上げ、基本的な設定をする
-2. .env.exampleを参考に.envを書き込む。
-3. VOICEVOXサーバーを立ち上げる
+1. イメージのビルド
+   ```bash
+   docker build -t swiftlytts .
+   ```
 
-[VOICEVOX_engineのrepo](https://github.com/VOICEVOX/voicevox_engine)を参照してください
-
-VOICEVOXサーバーのURLを指定する場合は、.envファイルで`VOICEVOX_URL`を設定してください。
-
-4. bot.pyを実行する
+2. 実行
+   `.env` ファイルを使用するか、`-e` オプションで接続先を指定して起動します。
+   
+   ```bash
+   # 例: .env ファイルを使用しつつ、DBホストとVOICEVOX URLを上書きする場合
+   docker run -d \
+    --name swiftlytts-app \
+    --network host \
+    -e DISCORD_TOKEN=your_token_here \
+    -e DB_HOST=localhost \
+    -e DB_USER=postgres \
+    -e DB_PASSWORD=your_db_password \
+    -e DB_NAME=swiftlytts \
+    -e VOICEVOX_URL=http://localhost:50021 \
+    -e OPENROUTER_API_KEY=sk-or-v1-xxxxxxxx... \
+    -v $(pwd)/config.yml:/app/config.yml \
+    swiftlytts:latest
 ```
-python bot.py
-```
-
-### Pterodactylで実行
-1. [Pterodactyl Egg](https://github.com/techfish-11/SwiftlyTTS/blob/main/pterodactyl-egg.json)をダウンロードしてインポートする
-2. サーバーを作成し、環境変数を設定する
-3. サーバーを起動する
-(VOICEVOXサーバー、PostgreSQLサーバーは別途用意してください)
-
-### Docker Composeで実行
-1. gitからリポジトリをクローンする
-```bash
-git clone https://github.com/techfish-11/SwiftlyTTS.git
-```
-2. リポジトリのディレクトリに移動する
-```bash
-cd SwiftlyTTS
-```
-3. .envを書き込む。
-4. docker composeで実行する
-```bash
-docker compose up -d
-```
-
-## Web UIの実行方法
-Web UIはNext.jsで構築されており、`web/`ディレクトリにあります。
-
-また、ボットとWebサーバーはHTTP APIを介して通信するため、Webダッシュボード使用時はボットも起動しておく必要があります。
-
-### 直接実行（推奨）
-1. Node.jsとnpmがインストールされていることを確認する
-2. `web/`ディレクトリに移動する
-```bash
-cd web
-```
-3. 依存関係をインストールする
-```bash
-npm install
-```
-4. ビルドする
-```bash
-npm run build
-```
-5. .envを書き込む。
-6. サーバーを起動する
-```bash
-npm start
-```
+- `OPENROUTER_API_KEY` を指定することで、このモードでもAI読み仮名判定が有効になります（不要な場合は省略可）。
+   
+   **注意**: 
+   - ホストOSのDB等に接続する場合は、適切なネットワーク設定（`--network host` や適切なIPアドレス指定）を行ってください。
+   - `DB_HOST` や `VOICEVOX_URL` は `.env` 内の設定よりも `-e` で指定した値が優先されます。

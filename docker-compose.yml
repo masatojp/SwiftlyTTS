@@ -74,6 +74,7 @@ services:
         condition: service_healthy
     volumes:
       - ./:/app  # 開発時にソースを反映させたい場合は有効。プロダクションでは外すことを推奨
+      - ./config.yml:/app/config.yml
     restart: unless-stopped
 
   adminer:
