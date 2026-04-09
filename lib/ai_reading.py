@@ -15,16 +15,16 @@ class AIReadingClient:
         self.cache = collections.OrderedDict()
         self.cache_max_size = 1000
 
-    async def get_reading(self, text: str) -> str:
+    async def get_reading(self, text: str) -> tuple[str, bool]:
         """
         AIを使用してテキストを読みビ（ひらがな・カタカナのみ）に変換する
         """
         if not self.api_key:
             print("AI Reading: Skipped (No API Key configured)")
-            return text
+            return text, False
 
         if not text or not text.strip():
-            return text
+            return text, False
             
         # 漢字・英数字・一部の記号が含まれていないかチェック（ひらがな・カタカナのみの場合はAIをスキップして高速化）
         import re
@@ -34,15 +34,15 @@ class AIReadingClient:
             kata = "ァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロヮワヰヱヲンヴ"
             tr = str.maketrans(hira, kata)
             translated = text.translate(tr)
-            return f"{translated}'" if not translated.endswith("'") else translated
+            result = f"{translated}'" if not translated.endswith("'") else translated
+            return result, True
 
         # キャッシュのチェック
         if text in self.cache:
             self.cache.move_to_end(text)
-            return self.cache[text]
+            return self.cache[text], True
         
         print(f"AI Reading: Processing text: {text[:20]}...")
-
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -91,7 +91,7 @@ class AIReadingClient:
                     if response.status != 200:
                         error_text = await response.text()
                         print(f"OpenRouter API Error: {response.status} - {error_text}")
-                        return text # エラー時は元のテキストを返す
+                        return text, False # エラー時は元のテキストを返す
 
                     data = await response.json()
                     content = data["choices"][0]["message"]["content"]
@@ -110,7 +110,7 @@ class AIReadingClient:
                         self.cache[text] = result
                         if len(self.cache) > self.cache_max_size:
                             self.cache.popitem(last=False)
-                        return result
+                        return result, True
                     except json.JSONDecodeError:
                         print(f"Failed to parse JSON response: {content}")
                         # 正規表現で aques_talk の中身を抽出するフォールバック
@@ -123,13 +123,13 @@ class AIReadingClient:
                             self.cache[text] = fallback_result
                             if len(self.cache) > self.cache_max_size:
                                 self.cache.popitem(last=False)
-                            return fallback_result
+                            return fallback_result, True
                         
-                        return text # パース失敗時は元のテキストを返す (JSONの生テキストを読み上げないように)
+                        return text, False # パース失敗時は元のテキストを返す (JSONの生テキストを読み上げないように)
         # TimeoutErrorのキャッチを追加
         except asyncio.TimeoutError:
             print(f"AI Reading Timeout: 4 seconds elapsed for text '{text[:20]}...'")
-            return text
+            return text, False
         except Exception as e:
             print(f"Failed to get AI reading: {e}")
-            return text # エラー時は元のテキストを返す
+            return text, False # エラー時は元のテキストを返す

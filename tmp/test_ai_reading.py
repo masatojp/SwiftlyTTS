@@ -13,10 +13,11 @@ async def main():
     print("Starting generation...")
     
     start_time = time.time()
-    result = await client.get_reading(test_text)
+    result, is_kana = await client.get_reading(test_text)
     end_time = time.time()
     
     print(f"Result: {result}")
+    print(f"Is Kana: {is_kana}")
     print(f"Time taken: {end_time - start_time:.2f} seconds")
 
 if __name__ == "__main__":
