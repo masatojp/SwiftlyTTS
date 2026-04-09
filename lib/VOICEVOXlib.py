@@ -77,7 +77,7 @@ class VOICEVOXLib:
                 response.raise_for_status()
                 return await response.json()
 
-    async def synthesize(self, text, speaker_id, output_path, speed: float = 1.0):
+    async def synthesize(self, text, speaker_id, output_path, speed: float = 1.0, is_kana: bool = False):
         """
         Synthesize speech from text using the VOICEVOX engine.
 
@@ -100,9 +100,12 @@ class VOICEVOXLib:
                     async with aiohttp.ClientSession() as session:
                         start_time = time.perf_counter()
                         # Step 1: Generate audio query
+                        params_query = {"text": text, "speaker": speaker_id}
+                        if is_kana:
+                            params_query["is_kana"] = "true"
                         async with session.post(
                             f"{base_url}/audio_query",
-                            params={"text": text, "speaker": speaker_id}
+                            params=params_query
                         ) as query_response:
                             if query_response.status >= 500:
                                 raise aiohttp.ClientResponseError(
@@ -187,9 +190,12 @@ class VOICEVOXLib:
                     async with aiohttp.ClientSession() as session:
                         start_time = time.perf_counter()
                         # Step 1: Generate audio query
+                        params_query = {"text": text, "speaker": speaker_id}
+                        if is_kana:
+                            params_query["is_kana"] = "true"
                         async with session.post(
                             f"{backup_url}/audio_query",
-                            params={"text": text, "speaker": speaker_id}
+                            params=params_query
                         ) as query_response:
                             query_response.raise_for_status()
                             audio_query = await query_response.json()
@@ -247,7 +253,7 @@ class VOICEVOXLib:
                     continue
         raise RuntimeError(f"All VOICEVOX URLs failed for synthesis: {text[:50]}... Last error: {last_error}")
 
-    async def synthesize_bytes(self, text, speaker_id) -> tuple[str, bytes]:
+    async def synthesize_bytes(self, text, speaker_id, is_kana: bool = False) -> tuple[str, bytes]:
         """
         Synthesize speech from text and return audio data as bytes.
 
@@ -271,9 +277,12 @@ class VOICEVOXLib:
                         start_time = time.perf_counter()
 
                         # Step 1: Generate audio query
+                        params_query = {"text": text, "speaker": speaker_id}
+                        if is_kana:
+                            params_query["is_kana"] = "true"
                         async with session.post(
                             f"{base_url}/audio_query",
-                            params={"text": text, "speaker": speaker_id}
+                            params=params_query
                         ) as query_response:
                             if query_response.status >= 500:
                                 raise aiohttp.ClientResponseError(
@@ -342,9 +351,12 @@ class VOICEVOXLib:
                     async with aiohttp.ClientSession() as session:
                         start_time = time.perf_counter()
                         # Step 1: Generate audio query
+                        params_query = {"text": text, "speaker": speaker_id}
+                        if is_kana:
+                            params_query["is_kana"] = "true"
                         async with session.post(
                             f"{backup_url}/audio_query",
-                            params={"text": text, "speaker": speaker_id}
+                            params=params_query
                         ) as query_response:
                             query_response.raise_for_status()
                             audio_query = await query_response.json()

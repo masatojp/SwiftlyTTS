@@ -420,8 +420,18 @@ class VoiceReadCog(commands.Cog):
             speed = await self.db.get_server_voice_speed(interaction.guild.id)
             if speed is None:
                 speed = 1.0
+            
+            import re
+            is_kana = False
+            # AquesTalk記法のみで構成されているか判定
+            if re.match(r"^[ァ-ヴー・、/_' 　？]+$", text):
+                is_kana = True
+            else:
+                # 混ざっている場合はAquesTalk特有記号を除去してOpenJTalkに渡す (誤読回避)
+                text = re.sub(r"[_'/]", "", text)
+
             try:
-                saved_path = await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed)
+                saved_path = await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed, is_kana=is_kana)
                 self.logger.info(f"Output: Success (Speaker ID: {self.speaker_id}, File: {saved_path})")
             except Exception:
                 traceback.print_exc()
@@ -674,8 +684,18 @@ class VoiceReadCog(commands.Cog):
                 speed = await self.db.get_server_voice_speed(guild_id)
                 if speed is None:
                     speed = 1.0
+                
+                import re
+                is_kana = False
+                # AquesTalk記法のみで構成されているか判定
+                if re.match(r"^[ァ-ヴー・、/_' 　？]+$", text):
+                    is_kana = True
+                else:
+                    # 混ざっている場合はAquesTalk特有記号を除去してOpenJTalkに渡す
+                    text = re.sub(r"[_'/]", "", text)
+
                 try:
-                    saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed)
+                    saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed, is_kana=is_kana)
                     self.logger.info(f"Output: Success (Speaker ID: {speaker_id}, File: {saved_path})")
                 except Exception as e:
                     self.logger.error(f"TTS synth failed for guild {guild_id}: {e}")

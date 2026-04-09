@@ -29,8 +29,12 @@ class AIReadingClient:
         # 漢字・英数字・一部の記号が含まれていないかチェック（ひらがな・カタカナのみの場合はAIをスキップして高速化）
         import re
         if not re.search(r'[a-zA-Z0-9０-９ａ-ｚＡ-Ｚ\u4e00-\u9faf]', text):
-            # 漢字・英数字がない場合はそのままのテキストで十分読める可能性が高い
-            return text
+            # ひらがな・カタカナのみの場合はAIをスキップして高速化、ただしAquesTalk互換にするためカタカナ化＋末尾アクセント
+            hira = "ぁあぃいぅうぇえぉおかがきぎくぐけげこごさざしじすずせぜそぞただちぢっつづてでとどなにぬねのはばぱひびぴふぶぷへべぺほぼぽまみむめもゃやゅゆょよらりるれろゎわゐゑをんゔ"
+            kata = "ァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロヮワヰヱヲンヴ"
+            tr = str.maketrans(hira, kata)
+            translated = text.translate(tr)
+            return f"{translated}'" if not translated.endswith("'") else translated
 
         # キャッシュのチェック
         if text in self.cache:
@@ -48,17 +52,20 @@ class AIReadingClient:
         }
 
         system_prompt = (
-            "あなたは日本語のテキスト読み上げ（TTS）エンジンのためのプリプロセッサです。入力された日本語テキストを解析し、以下のJSON形式で出力してください。\n\n"
+            "あなたは日本語のテキスト読み上げ（TTS）エンジンのためのプリプロセッサです。入力された日本語テキストを解析し、以下のJSON形式で「AquesTalk風記法」に変換して出力してください。\n\n"
             "Format:\n"
             "{\n"
-            "  \"yomi_katakana\": \"カタカナ変換後のテキスト（数字やアルファベットもカタカナ読み・句読点は維持・漢字はひらがな等に開く）\"\n"
+            "  \"aques_talk\": \"AquesTalk風記法に変換されたテキスト\"\n"
             "}\n\n"
-            "Rule:\n"
-            "1. 数字やアルファベットは、文脈に応じて自然な読み仮名（カタカナ）にする。\n"
-            "2. 絵文字や記号は、読み上げに不要なら削除するか、意味を表す言葉に変換する。\n"
-            "3. 文脈を考慮し、自然なアクセントやイントネーションになるような表記を目指す。\n"
-            "4. 「｟」と「｠」で囲まれたテキストは、手動辞書による置換結果です。この部分は**絶対に**変更せず、囲まれたまま出力してください（例: input: ｟固定｠だよ -> output: ｟固定｠だよ）。\n"
-            "5. JSONのフォーマットを厳格に守り、文字列に改行を含める場合は必ず「\\n」のようにエスケープするか、改行をスペースに置換してください。生（リテラル）の改行を含めないでください。"
+            "「AquesTalk風記法」のルール：\n"
+            "1. 全てのカナはカタカナで記述される\n"
+            "2. アクセント句は / または 、 で区切る。 、 で区切った場合に限り無音区間が挿入される。\n"
+            "3. カナの手前に _ を入れるとそのカナは無声化される\n"
+            "4. アクセント位置を ' で指定する。全てのアクセント句にはアクセント位置を 1 つ指定する必要がある。\n"
+            "5. アクセント句末に ？ (全角)を入れることにより疑問文の発音ができる\n"
+            "6. 記号や絵文字等で発音に関係ないものは除去するか、文脈に応じて適切な言葉（例: 笑顔）に変換し、数字やアルファベットもカタカナ読み（例: 1 -> イチ'）にする。\n"
+            "7. 「｟」と「｠」で囲まれたテキストは手動辞書置換結果です。この部分は**絶対に**変更せず、囲まれたまま出力してください（例: input: ｟固定｠だよ -> output: ｟固定｠ダヨ'）。\n"
+            "8. JSONのフォーマットを厳格に守り、文字列に改行を含める場合は必ず「\\n」のようにエスケープするか、改行をスペースに置換してください。生（リテラル）の改行を含めないでください。"
         )
 
         payload = {
@@ -98,7 +105,7 @@ class AIReadingClient:
                         # 改行をエスケープできていない不正なJSONが返ってくる場合があるため、
                         # 簡易的に \n を除去するか置換するなどの対処は難しいので厳密なパースを試みる
                         json_content = json.loads(clean_content)
-                        result = json_content.get("yomi_katakana", text).strip()
+                        result = json_content.get("aques_talk", text).strip()
                         print(f"AI Reading Result: {text[:30]}... -> {result[:30]}...")
                         self.cache[text] = result
                         if len(self.cache) > self.cache_max_size:
@@ -106,10 +113,10 @@ class AIReadingClient:
                         return result
                     except json.JSONDecodeError:
                         print(f"Failed to parse JSON response: {content}")
-                        # 正規表現で yomi_katakana の中身を抽出するフォールバック
+                        # 正規表現で aques_talk の中身を抽出するフォールバック
                         import re
                         # 末尾のダブルクォーテーションや括弧が欠損している場合にも対応する強力な正規表現
-                        match = re.search(r'"yomi_katakana"\s*:\s*"([^"]*)(?:"|\}*|$)', clean_content)
+                        match = re.search(r'"aques_talk"\s*:\s*"([^"]*)(?:"|\}*|$)', clean_content)
                         if match:
                             fallback_result = match.group(1).replace('\n', ' ').replace('\\n', ' ').strip()
                             print(f"Fallback extracted: {fallback_result[:30]}...")
