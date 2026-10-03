@@ -181,14 +181,14 @@ class VoiceReadCog(commands.Cog):
             # 新規: 既に同じギルドで接続されている場合、既存の接続を切断しデータをクリア
             guild_id = interaction.guild.id
             if interaction.guild.voice_client:
-                await interaction.guild.voice_client.disconnect()
+                # DBから既存のVC接続状態を削除
+                await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild_id)
                 # 既存のキュー・タスク等をリセット
                 if guild_id in self.queue_tasks:
                     self.queue_tasks[guild_id].cancel()
                     del self.queue_tasks[guild_id]
                 self.tts_channels.pop(guild_id, None)
-                # DBから既存のVC接続状態を削除
-                await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild_id)
+                await interaction.guild.voice_client.disconnect()
             
             try:
                 # 変更: ヘルパーを使って接続、リトライとフォールバック対応
@@ -275,14 +275,14 @@ class VoiceReadCog(commands.Cog):
             return
         if interaction.guild.voice_client:
             self.logger.info(f"[VC Disconnect] Reason: leave command by user in guild {interaction.guild.id}, channel {interaction.guild.voice_client.channel.id}")
-            await interaction.guild.voice_client.disconnect()
+            # データベースからVC接続状態を削除
+            await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", interaction.guild.id)
             # キュー・タスク等をリセット
             if interaction.guild.id in self.queue_tasks:
                 self.queue_tasks[interaction.guild.id].cancel()
                 del self.queue_tasks[interaction.guild.id]
             self.tts_channels.pop(interaction.guild.id, None)
-            # データベースからVC接続状態を削除
-            await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", interaction.guild.id)
+            await interaction.guild.voice_client.disconnect()
             embed = discord.Embed(
                 title="退出完了",
                 description="ボイスチャンネルから退出しました。\nご利用ありがとうございました",
@@ -410,18 +410,31 @@ class VoiceReadCog(commands.Cog):
         
         # テキストを辞書で変換
         dictionary_cog = self.bot.get_cog("DictionaryCog")
+        is_kana = False
         if dictionary_cog:
-            converted_text = await dictionary_cog.apply_dictionary(text, interaction.guild.id)
-            self.logger.info(f"Parsed: {converted_text} (AI dict applied: {str(text != converted_text)})")
+            converted_text, dict_is_kana = await dictionary_cog.apply_dictionary(text, interaction.guild.id)
+            self.logger.info(f"Parsed: {converted_text} (AI dict applied: {str(text != converted_text)}, dict_is_kana: {dict_is_kana})")
             text = converted_text
+            is_kana = dict_is_kana
 
         try:
             tmp_wav = f"tmp/tmp_{uuid.uuid4()}_read.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
             speed = await self.db.get_server_voice_speed(interaction.guild.id)
             if speed is None:
                 speed = 1.0
+            
+            import re
+            # 辞書からのフラグがFalse（または非AI）の場合に限り、正規表現で再判定
+            if not is_kana:
+                # AquesTalk記法のみで構成されているか判定
+                if re.match(r"^[ァ-ヴー・、/_' 　？]+$", text):
+                    is_kana = True
+                else:
+                    # 混ざっている場合はAquesTalk特有記号を除去してOpenJTalkに渡す (誤読回避)
+                    text = re.sub(r"[_'/]", "", text)
+
             try:
-                saved_path = await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed)
+                saved_path = await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed, is_kana=is_kana)
                 self.logger.info(f"Output: Success (Speaker ID: {self.speaker_id}, File: {saved_path})")
             except Exception:
                 traceback.print_exc()
@@ -658,24 +671,41 @@ class VoiceReadCog(commands.Cog):
 
                 # テキストを辞書で変換
                 dictionary_cog = self.bot.get_cog("DictionaryCog")
+                is_kana = False
                 if dictionary_cog:
-                    converted_text = await dictionary_cog.apply_dictionary(text, guild_id)
-                    self.logger.info(f"Parsed: {converted_text} (AI dict applied: {str(text != converted_text)})")
+                    converted_text, dict_is_kana = await dictionary_cog.apply_dictionary(text, guild_id)
+                    self.logger.info(f"Parsed: {converted_text} (AI dict applied: {str(text != converted_text)}, dict_is_kana: {dict_is_kana})")
                     text = converted_text
+                    is_kana = dict_is_kana
 
                 # ずんだもんの場合、configでユーザー名読み上げ有効なら先頭に追加
                 config = getattr(self.bot, "config", {})
                 zundamon_read_username_enabled = config.get("zundamon_read_username_enabled", False)
                 if speaker_id == 3 and zundamon_read_username_enabled:
                     if dictionary_cog:
-                        user_name = await dictionary_cog.apply_dictionary(user_name, guild_id)
+                        user_name, _ = await dictionary_cog.apply_dictionary(user_name, guild_id)
                     text = f"{user_name}、{text}"
+                    # 名前を結合した場合は AquesTalk 記法が壊れる可能性がある（名前が漢字などの場合）ため、
+                    # 一旦 is_kana を False にして正規表現に任せるか、あるいは結合後の判断を行う
+                    is_kana = False
+
                 tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
                 speed = await self.db.get_server_voice_speed(guild_id)
                 if speed is None:
                     speed = 1.0
+                
+                import re
+                # 辞書からのフラグがFalse（または非AI）の場合に限り、正規表現で再判定
+                if not is_kana:
+                    # AquesTalk記法のみで構成されているか判定
+                    if re.match(r"^[ァ-ヴー・、/_' 　？]+$", text):
+                        is_kana = True
+                    else:
+                        # 混ざっている場合はAquesTalk特有記号を除去してOpenJTalkに渡す
+                        text = re.sub(r"[_'/]", "", text)
+
                 try:
-                    saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed)
+                    saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed, is_kana=is_kana)
                     self.logger.info(f"Output: Success (Speaker ID: {speaker_id}, File: {saved_path})")
                 except Exception as e:
                     self.logger.error(f"TTS synth failed for guild {guild_id}: {e}")
@@ -717,8 +747,8 @@ class VoiceReadCog(commands.Cog):
         """メッセージを読み上げキューに追加"""
         if await self.is_banned(message.author.id):
             return  # BANされたユーザーのメッセージは無視
-        # BotやDMは無視
-        if message.author.bot or not message.guild:
+        # 自分自身のメッセージやDMは無視
+        if message.author.id == self.bot.user.id or not message.guild:
             return
         # joinコマンドが実行されたチャンネルか確認
         tts_channel_id = self.tts_channels.get(message.guild.id)
@@ -834,13 +864,13 @@ class VoiceReadCog(commands.Cog):
             # ボットのみになった場合は切断
             if voice_client and voice_client.channel and len(voice_client.channel.members) == 1:
                 self.logger.info(f"[VC Disconnect] Reason: Bot only in VC (guild={guild.id}, channel={voice_client.channel.id})")
-                await voice_client.disconnect()
+                # データベースからVC接続状態を削除
+                await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
                 if guild.id in self.queue_tasks:
                     self.queue_tasks[guild.id].cancel()
                     del self.queue_tasks[guild.id]
                 self.tts_channels.pop(guild.id, None)
-                # データベースからVC接続状態を削除
-                await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
+                await voice_client.disconnect()
                 return
 
             # ボイスチャンネル未接続の場合の処理や接続チェック
@@ -848,13 +878,13 @@ class VoiceReadCog(commands.Cog):
                 # ボットがVCから追放された場合
                 if member == guild.me:
                     self.logger.info(f"[VC Disconnect] Reason: Bot was kicked from VC (guild={guild.id}, channel={voice_client.channel.id})")
-                    await voice_client.disconnect()
+                    # データベースからVC接続状態を削除
+                    await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
                     if guild.id in self.queue_tasks:
                         self.queue_tasks[guild.id].cancel()
                         del self.queue_tasks[guild.id]
                     self.tts_channels.pop(guild.id, None)
-                    # データベースからVC接続状態を削除
-                    await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
+                    await voice_client.disconnect()
                     return
 
             # --- ボットが予期せずVCから切断された場合の即時再接続 ---

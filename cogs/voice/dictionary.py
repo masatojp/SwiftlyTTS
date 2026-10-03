@@ -284,7 +284,7 @@ class DictionaryCog(commands.Cog):
             except Exception as inner_e:
                 print(inner_e)
 
-    async def apply_dictionary(self, text: str, guild_id: int = None) -> str:
+    async def apply_dictionary(self, text: str, guild_id: int = None) -> tuple[str, bool]:
         """辞書を適用してテキストを変換（サーバーごと対応 & グローバル辞書対応）"""
         if not self.cache_task or self.cache_task.done():
             self.cache_task = self.bot.loop.create_task(self.cache_updater())
@@ -324,12 +324,12 @@ class DictionaryCog(commands.Cog):
             text = text[:150] + "省略"
         
         # 最後にAIによる読み仮名変換を適用 (APIキー設定時のみ)
-        text = await self.ai_client.get_reading(text)
+        text, is_kana = await self.ai_client.get_reading(text)
         
         # マーカーを除去
         text = text.replace("｟", "").replace("｠", "")
 
-        return text
+        return text, is_kana
 
 async def setup(bot):
     await bot.add_cog(DictionaryCog(bot))
