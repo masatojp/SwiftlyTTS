@@ -73,7 +73,8 @@ services:
       voicevox:
         condition: service_healthy
     volumes:
-      - ./:/app  # 開発時にソースを反映させたい場合は有効。プロダクションでは外すことを推奨
+      # 注意: ./:/app をマウントすると、イメージ内の /app/.venv(依存パッケージ)がホストの内容で隠れて
+      # ModuleNotFoundError になるため、ソース全体のマウントは行わない
       - ./config.yml:/app/config.yml
     restart: unless-stopped
 
