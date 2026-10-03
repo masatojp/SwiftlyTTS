@@ -55,10 +55,12 @@ services:
     env_file:
       - .env
     environment:
-      # DB_HOST は compose 内のサービス名を参照
-      DB_HOST: postgres
-      DB_PORT: 5432
-      # 以下は .env に設定されていれば上書きされます
+      # DB 接続先は .env の値を優先する(外部DBを使う場合は .env に DB_HOST 等を設定)
+      # 未設定の場合のみ compose 内の postgres サービスを参照する
+      # 注意: environment は env_file より優先されるため、固定値を書くと .env が無視される
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_SSL: ${DB_SSL:-false}
       DB_NAME: ${DB_NAME:-swiftlytts}
       DB_USER: ${DB_USER:-swiftlytts}
       DB_PASSWORD: ${DB_PASSWORD:-swiftlytts}
