@@ -427,7 +427,7 @@ class VoiceReadCog(commands.Cog):
             # 辞書からのフラグがFalse（または非AI）の場合に限り、正規表現で再判定
             if not is_kana:
                 # AquesTalk記法のみで構成されているか判定
-                if re.match(r"^[ァ-ヴー・、/_' 　？]+$", text):
+                if re.match(r"^[ァ-ヴー・、/_' 　？]+$", text) and "'" in text:  # アクセント記号を含む場合のみAquesTalk記法とみなす
                     is_kana = True
                 else:
                     # 混ざっている場合はAquesTalk特有記号を除去してOpenJTalkに渡す (誤読回避)
@@ -698,7 +698,7 @@ class VoiceReadCog(commands.Cog):
                 # 辞書からのフラグがFalse（または非AI）の場合に限り、正規表現で再判定
                 if not is_kana:
                     # AquesTalk記法のみで構成されているか判定
-                    if re.match(r"^[ァ-ヴー・、/_' 　？]+$", text):
+                    if re.match(r"^[ァ-ヴー・、/_' 　？]+$", text) and "'" in text:  # アクセント記号を含む場合のみAquesTalk記法とみなす
                         is_kana = True
                     else:
                         # 混ざっている場合はAquesTalk特有記号を除去してOpenJTalkに渡す
