@@ -1,4 +1,5 @@
 import os
+import asyncio
 import asyncpg
 from dotenv import load_dotenv
 from typing import Optional, List
@@ -48,16 +49,26 @@ class PostgresDB:
 
     async def initialize(self) -> None:
         """Initialize the connection pool and ensure the dictionary table exists"""
-        self._pool = await asyncpg.create_pool(
-            host=DB_HOST,
-            port=DB_PORT,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            ssl=DB_SSL,
-            min_size=1,
-            max_size=10
-        )
+        # DB側の起動/許可設定が間に合わない場合に備えてリトライする
+        max_attempts = 5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self._pool = await asyncpg.create_pool(
+                    host=DB_HOST,
+                    port=DB_PORT,
+                    database=DB_NAME,
+                    user=DB_USER,
+                    password=DB_PASSWORD,
+                    ssl=DB_SSL,
+                    min_size=1,
+                    max_size=10
+                )
+                break
+            except (OSError, asyncpg.PostgresError) as e:
+                if attempt == max_attempts:
+                    raise
+                print(f"DB connection failed (attempt {attempt}/{max_attempts}): {e}. Retrying...")
+                await asyncio.sleep(attempt * 3)
         # 辞書テーブルを作成
         async with self._pool.acquire() as connection:
             await connection.execute("""

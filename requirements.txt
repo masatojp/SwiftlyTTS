@@ -7,6 +7,7 @@ aiohttp
 psutil
 voicevox-client
 PyNaCl
+davey
 prometheus_client
 uvloop 
 sentry-sdk
