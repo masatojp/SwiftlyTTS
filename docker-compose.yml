@@ -24,8 +24,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-swiftlytts}
     volumes:
       - db_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # ホスト側へのポート公開は不要(bot からは compose 内ネットワークで postgres:5432 に接続する)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-swiftlytts}"]
       interval: 10s
