@@ -14,6 +14,11 @@ class AIReadingClient:
         import collections
         self.cache = collections.OrderedDict()
         self.cache_max_size = 1000
+        # 起動時にAI読み仮名変換が有効かどうかをログに出す(動作確認用)
+        if self.api_key:
+            print(f"AI Reading: 有効 (model={self.model_name})")
+        else:
+            print("AI Reading: 無効 (OPENROUTER_API_KEY が未設定です)")
 
     async def get_reading(self, text: str) -> tuple[str, bool]:
         """
@@ -32,6 +37,7 @@ class AIReadingClient:
             # ひらがな・カタカナのみの場合はAIをスキップして高速化、ただしAquesTalk互換にするためカタカナ化＋末尾アクセント
             hira = "ぁあぃいぅうぇえぉおかがきぎくぐけげこごさざしじすずせぜそぞただちぢっつづてでとどなにぬねのはばぱひびぴふぶぷへべぺほぼぽまみむめもゃやゅゆょよらりるれろゎわゐゑをんゔ"
             kata = "ァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロヮワヰヱヲンヴ"
+            print(f"AI Reading: Skipped (ひらがな・カタカナのみのためAI不使用): {text[:20]}")
             tr = str.maketrans(hira, kata)
             translated = text.translate(tr)
             result = f"{translated}'" if not translated.endswith("'") else translated
@@ -39,6 +45,7 @@ class AIReadingClient:
 
         # キャッシュのチェック
         if text in self.cache:
+            print(f"AI Reading: キャッシュを使用: {text[:20]}")
             self.cache.move_to_end(text)
             return self.cache[text], True
         
