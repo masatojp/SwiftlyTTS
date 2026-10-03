@@ -119,6 +119,12 @@ async def restart_rpc_task():
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
+    # DAVE(E2EE)に必要な davey の有無を確認(未導入だとVC接続が code 4017 で失敗する)
+    try:
+        import davey
+        print(f"discord.py {discord.__version__} / davey {getattr(davey, '__version__', '不明')} (DAVE対応)")
+    except ImportError:
+        print(f"警告: davey が未インストールです (discord.py {discord.__version__})。VC接続が code 4017 で失敗します。イメージを再ビルド/再取得してください。")
     await patch_discord_aiohttp_limit(bot)
 
     # データベース接続テスト

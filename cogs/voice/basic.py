@@ -1008,6 +1008,10 @@ class VoiceReadCog(commands.Cog):
                     if code == 4006:
                         self.logger.warning(f"Detected 4006 for guild={guild_id}; aborting further attempts (no forced disconnect).")
                         return None
+                    if code == 4017:
+                        # DAVE(E2EE)必須。davey未導入ではリトライしても必ず失敗するため中断する
+                        self.logger.error(f"Detected 4017 (DAVE required) for guild={guild_id}; davey が未インストールの可能性があります。リトライを中断します。")
+                        return None
                     await asyncio.sleep(backoff)
                     backoff *= 2
                     continue
