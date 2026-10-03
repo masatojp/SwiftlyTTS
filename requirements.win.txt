@@ -4,7 +4,8 @@ asyncpg
 PyYAML
 aiohttp
 psutil
-PyNaCl
+PyNaCl>=1.6.2
+davey
 prometheus_client
 sentry-sdk
 fastapi
