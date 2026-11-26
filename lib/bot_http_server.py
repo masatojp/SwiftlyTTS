@@ -154,7 +154,11 @@ async def get_voice_sample(speaker_id: int):
         print(f"[VoiceSample] Generating new sample for speaker_id={speaker_id}")
         
         # synthesize_bytesを使用してバイトデータを取得
-        _, wav_bytes = await cog.voicelib.synthesize_bytes(sample_text, speaker_id)
+        # Bot のイベントループ上で合成する(セッション・同時実行数の制限を共有するため)
+        future = asyncio.run_coroutine_threadsafe(
+            cog.voicelib.synthesize_bytes(sample_text, speaker_id), _bot.loop
+        )
+        _, wav_bytes = await asyncio.wrap_future(future)
         
         # キャッシュに保存
         _voice_sample_cache[speaker_id] = wav_bytes

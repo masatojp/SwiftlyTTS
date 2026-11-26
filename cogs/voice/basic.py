@@ -4,7 +4,7 @@ from discord.ext import commands
 import asyncio
 import os
 import subprocess
-from lib.VOICEVOXlib import VOICEVOXLib
+from lib.VOICEVOXlib import get_shared_voicelib
 from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
 from lib.rust_lib_client import RustQueueClient
@@ -54,7 +54,7 @@ class VoiceReadCog(commands.Cog):
     autojoin = app_commands.Group(name="autojoin", description="自動参加設定")
     def __init__(self, bot):
         self.bot = bot
-        self.voicelib = VOICEVOXLib()
+        self.voicelib = get_shared_voicelib(getattr(bot, "config", None))
         self.speaker_id = 1
         self.tts_channels = {}      # {guild.id: channel.id}
         self.message_queues = {}    # {guild.id: asyncio.Queue}
