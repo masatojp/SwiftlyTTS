@@ -23,22 +23,6 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# 5. Rust toolchainインストール
-if ! command -v cargo &>/dev/null; then
-  echo "[*] Installing Rust toolchain..."
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-  source $HOME/.cargo/env
-fi
-
-# 6. maturinインストール
-pip install maturin
-
-# 7. Rustバインディングビルド
-echo "[*] Building Rust FFI (lib/rust_lib)..."
-cd lib/rust_lib
-maturin develop
-cd ../..
-
 echo "=== Install completed! ==="
 echo "仮想環境有効化: source .venv/bin/activate"
 echo "Bot起動: python bot.py"

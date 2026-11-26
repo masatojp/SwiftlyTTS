@@ -2,13 +2,14 @@ import discord
 from discord.errors import ConnectionClosed
 from discord.ext import commands
 import asyncio
+import io
 import os
-import subprocess
 from lib.VOICEVOXlib import get_shared_voicelib
 from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
-from lib.rust_lib_client import RustQueueClient
-import uuid
+from lib.text_pipeline import MessageContext, PipelineConfig, preprocess as pipeline_preprocess, split_sentences
+from lib.tts_player import Chunk, GuildTTSPlayer, TTSItem, OVERFLOW_DROP_OLDEST
+from lib.VOICEVOXlib import FORMAT_DISCORD, wav_to_discord_pcm
 from dotenv import load_dotenv  # dotenvをインポート
 import traceback
 import logging
@@ -57,9 +58,8 @@ class VoiceReadCog(commands.Cog):
         self.voicelib = get_shared_voicelib(getattr(bot, "config", None))
         self.speaker_id = 1
         self.tts_channels = {}      # {guild.id: channel.id}
-        self.message_queues = {}    # {guild.id: asyncio.Queue}
-        self.queue_tasks = {}       # {guild.id: Task}
-        self.rust_queue = RustQueueClient()
+        self.queue_tasks = {}       # {guild.id: Task}  再生ループ(process_queue)
+        self.players = {}           # {guild.id: GuildTTSPlayer}  読み上げキュー
         self.db = PostgresDB()  # データベースインスタンスを初期化
         self.cleanup_task = None  # 定期的なクリーンアップタスク
         # 新規: ギルド単位の接続ロック
@@ -217,29 +217,9 @@ class VoiceReadCog(commands.Cog):
                     guild_id, channel.id, interaction.channel.id
                 )
 
-            # 「接続しました。」と喋る処理を非同期で実行
-            async def play_connection_message():
-                tmp_wav = f"tmp_{uuid.uuid4()}_join.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
-                user_speaker_id = await self.get_user_speaker_id(interaction.user.id, interaction.guild.id)
-                try:
-                    saved_path = await self.voicelib.synthesize("接続しました。", user_speaker_id, tmp_wav)
-                except Exception:
-                    # 合成失敗は黙って戻る
-                    return
-                voice_client = interaction.guild.voice_client
-                if voice_client and not voice_client.is_playing():
-                    audio_source = discord.FFmpegPCMAudio(saved_path)
-                    voice_client.play(audio_source)
-                    while voice_client.is_playing():
-                        await asyncio.sleep(0.5)
-                # 再生後はライブラリが保存したファイルを削除
-                try:
-                    if saved_path and os.path.exists(saved_path):
-                        os.remove(saved_path)
-                except Exception:
-                    pass
-
-            self.bot.loop.create_task(play_connection_message())
+            # 「接続しました。」を読み上げキューに追加
+            user_speaker_id = await self.get_user_speaker_id(interaction.user.id, interaction.guild.id)
+            self.enqueue_tts(guild_id, TTSItem("接続しました。", user_speaker_id, apply_dictionary=False))
 
             # アナウンス内容をDBから取得して表示
             announce_data = await self.db.get_announce()
@@ -407,44 +387,20 @@ class VoiceReadCog(commands.Cog):
         # コマンドの読み上げログ
         self.logger.info(f"=== [TTS Request: /read] ===")
         self.logger.info(f"Input : {text}")
-        
-        # テキストを辞書で変換
-        dictionary_cog = self.bot.get_cog("DictionaryCog")
-        if dictionary_cog:
-            text = await dictionary_cog.preprocess(text, interaction.guild.id, interaction.user.id)
-            self.logger.info(f"Parsed: {text}")
 
+        # 読み上げキューに追加し、再生が終わるまで待つ(以前はキューを通さず、再生中なら読まれなかった)
+        guild_id = interaction.guild.id
+        item = TTSItem(text, self.speaker_id, author_id=interaction.user.id,
+                       done=asyncio.get_running_loop().create_future())
+        self.enqueue_tts(guild_id, item)
+        self.ensure_queue_task(guild_id)
         try:
-            tmp_wav = f"tmp/tmp_{uuid.uuid4()}_read.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
-            speed = await self.db.get_server_voice_speed(interaction.guild.id)
-            if speed is None:
-                speed = 1.0
-            
-            try:
-                saved_path = await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed)
-                self.logger.info(f"Output: Success (Speaker ID: {self.speaker_id}, File: {saved_path})")
-            except Exception:
-                traceback.print_exc()
-                self.bot.error_counter += 1  # エラーカウンターをインクリメント
-                return
-        except Exception:
-            traceback.print_exc()
-            self.bot.error_counter += 1  # エラーカウンターをインクリメント
+            played = await asyncio.wait_for(asyncio.shield(item.done), timeout=600)
+        except asyncio.TimeoutError:
+            played = False
+        if not played:
+            await interaction.followup.send("読み上げできませんでした（キューの破棄・合成エラーなど）。", ephemeral=True)
             return
-        if not voice_client.is_playing():
-            audio_source = discord.FFmpegPCMAudio(saved_path)
-            voice_client.play(audio_source)
-            while voice_client.is_playing():
-                await asyncio.sleep(0.5)
-            # 読み上げ成功時にカウンターをインクリメント
-            self.bot.tts_counter += 1
-            shard_id = interaction.guild.shard_id
-            self.bot.shard_tts_counters[shard_id] += 1
-        try:
-            if saved_path and os.path.exists(saved_path):
-                os.remove(saved_path)
-        except Exception:
-            pass
         embed = discord.Embed(
             title="再生完了",
             description="テキストの読み上げが完了しました。",
@@ -642,76 +598,141 @@ class VoiceReadCog(commands.Cog):
         row = await self.db.fetchrow("SELECT speaker_id FROM user_voice WHERE user_id = $1", user_id)
         return int(row['speaker_id']) if row else self.speaker_id  # デフォルトはself.speaker_id
 
-    async def process_queue(self, guild_id):
-        """サーバーごとの読み上げキューをRustで処理"""
-        guild = self.bot.get_guild(guild_id)
-        while True:
-            try:
-                item = self.rust_queue.get_next(guild_id)
-                if item is None:
-                    await asyncio.sleep(0.1)
-                    continue
-                text, speaker_id, user_name = item
-                # キューの読み上げログ
-                self.logger.info(f"=== [TTS Request: Message queue] ===")
-                self.logger.info(f"Input : {text}")
+    # --- 読み上げキュー ---------------------------------------------------------------
 
-                # テキストを辞書で変換
-                dictionary_cog = self.bot.get_cog("DictionaryCog")
-                if dictionary_cog:
-                    text = await dictionary_cog.preprocess(text, guild_id)
-                    self.logger.info(f"Parsed: {text}")
+    def tts_settings(self) -> dict:
+        config = getattr(self.bot, "config", None) or {}
+        return config.get("tts") or {}
 
-                # ずんだもんの場合、configでユーザー名読み上げ有効なら先頭に追加
-                config = getattr(self.bot, "config", {})
-                zundamon_read_username_enabled = config.get("zundamon_read_username_enabled", False)
-                if speaker_id == 3 and zundamon_read_username_enabled:
-                    if dictionary_cog:
-                        user_name = await dictionary_cog.preprocess(user_name, guild_id)
-                    text = f"{user_name}、{text}"
+    def get_player(self, guild_id: int) -> GuildTTSPlayer:
+        player = self.players.get(guild_id)
+        if player is None:
+            async def prepare(item, guild_id=guild_id):
+                return await self._prepare_item(guild_id, item)
 
-                tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
-                speed = await self.db.get_server_voice_speed(guild_id)
-                if speed is None:
-                    speed = 1.0
-                
-                try:
-                    saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed)
-                    self.logger.info(f"Output: Success (Speaker ID: {speaker_id}, File: {saved_path})")
-                except Exception as e:
-                    self.logger.error(f"TTS synth failed for guild {guild_id}: {e}")
-                    traceback.print_exc()
-                    self.bot.error_counter += 1  # エラーカウンターをインクリメント
-                    shard_id = guild.shard_id
-                    self.bot.shard_error_counters[shard_id] += 1
-                    continue
-                voice_client = guild.voice_client
-                if voice_client:
-                    while voice_client.is_playing():
-                        await asyncio.sleep(0.1)
-                    audio_source = discord.FFmpegPCMAudio(saved_path)
-                    voice_client.play(audio_source)
-                    while voice_client.is_playing():
-                        await asyncio.sleep(0.5)
-                    # 読み上げ成功時にカウンターをインクリメント
-                    self.bot.tts_counter += 1
-                    shard_id = guild.shard_id
-                    self.bot.shard_tts_counters[shard_id] += 1
-                try:
-                    if saved_path and os.path.exists(saved_path):
-                        os.remove(saved_path)
-                except Exception:
-                    pass
-            except asyncio.CancelledError:
-                break  # タスクがキャンセルされた場合は終了
-            except Exception as e:
-                self.logger.error(f"Error in process_queue for guild {guild_id}: {e}")
-                traceback.print_exc()
+            async def play(audio, guild_id=guild_id):
+                await self._play_audio(guild_id, audio)
+
+            def on_played(item, guild_id=guild_id):
+                # 読み上げ成功時にカウンターをインクリメント
+                self.bot.tts_counter += 1
+                g = self.bot.get_guild(guild_id)
+                if g is not None and hasattr(self.bot, "shard_tts_counters"):
+                    self.bot.shard_tts_counters[g.shard_id] += 1
+
+            def on_error(error, guild_id=guild_id):
                 self.bot.error_counter += 1  # エラーカウンターをインクリメント
-                shard_id = guild.shard_id
-                self.bot.shard_error_counters[shard_id] += 1
-                continue  # その他のエラーは無視して次のメッセージへ
-            await asyncio.sleep(0.1)  # 少し待機して次のメッセージへ
+                g = self.bot.get_guild(guild_id)
+                if g is not None and hasattr(self.bot, "shard_error_counters"):
+                    self.bot.shard_error_counters[g.shard_id] += 1
+
+            def on_first_audio(item, latency, guild_id=guild_id):
+                self.logger.info(f"[TTS] guild={guild_id} 受付から再生開始まで {latency:.2f}s (queue={len(self.players[guild_id])})")
+
+            player = GuildTTSPlayer(
+                prepare, self._synthesize_chunk, play,
+                logger=self.logger, on_played=on_played, on_error=on_error, on_first_audio=on_first_audio,
+            )
+            self.players[guild_id] = player
+        return player
+
+    def enqueue_tts(self, guild_id: int, item: TTSItem) -> bool:
+        settings = self.tts_settings()
+        try:
+            max_length = int(settings.get("queue_max_length", 0) or 0)
+        except (TypeError, ValueError):
+            max_length = 0
+        overflow = settings.get("queue_overflow", OVERFLOW_DROP_OLDEST) or OVERFLOW_DROP_OLDEST
+        player = self.get_player(guild_id)
+        before = player.dropped
+        accepted = player.enqueue(item, max_length=max_length, overflow=overflow)
+        if player.dropped != before:
+            self.logger.info(f"[TTS] guild={guild_id} キューが上限({max_length})を超えたため {player.dropped - before} 件を破棄 ({overflow})")
+        return accepted
+
+    def ensure_queue_task(self, guild_id: int) -> None:
+        task = self.queue_tasks.get(guild_id)
+        if task is None or task.done():
+            self.queue_tasks[guild_id] = self.bot.loop.create_task(self.process_queue(guild_id))
+
+    def stop_tts(self, guild) -> None:
+        """キューを空にし、再生中の音声を止める(「s」コマンド)。"""
+        player = self.players.get(guild.id)
+        if player is not None:
+            player.clear()
+        voice_client = guild.voice_client
+        if voice_client and voice_client.is_playing():
+            voice_client.stop()
+
+    async def _prepare_item(self, guild_id: int, item: TTSItem) -> list:
+        """前処理(辞書・メンション・文字数制限)をして、文ごとの合成単位に分ける。"""
+        self.logger.info(f"=== [TTS Request: Message queue] ===")
+        self.logger.info(f"Input : {item.text}")
+        dictionary_cog = self.bot.get_cog("DictionaryCog")
+        config = PipelineConfig.from_mapping(self.tts_settings())
+        if item.apply_dictionary and dictionary_cog:
+            text = await dictionary_cog.preprocess(item.text, guild_id, item.author_id, item.ctx, config)
+        else:
+            text = pipeline_preprocess(item.text, ctx=item.ctx, config=config)
+
+        # ずんだもんの場合、configでユーザー名読み上げ有効なら先頭に追加
+        bot_config = getattr(self.bot, "config", None) or {}
+        if item.speaker_id == 3 and item.user_name and bot_config.get("zundamon_read_username_enabled", False):
+            if dictionary_cog:
+                name = await dictionary_cog.preprocess(item.user_name, guild_id, item.author_id, None, config)
+            else:
+                name = pipeline_preprocess(item.user_name, config=config)
+            text = f"{name}、{text}"
+        self.logger.info(f"Parsed: {text}")
+
+        speed = await self.db.get_server_voice_speed(guild_id)
+        if speed is None:
+            speed = 1.0
+        return [Chunk(s, item.speaker_id, speed) for s in split_sentences(text, config.sentence_soft_max)]
+
+    async def _synthesize_chunk(self, chunk: Chunk, priority: int) -> bytes:
+        return await self.voicelib.synthesize_wav(
+            chunk.text, chunk.speaker_id, chunk.speed, priority=priority, output_format=FORMAT_DISCORD
+        )
+
+    async def _play_audio(self, guild_id: int, wav: bytes) -> None:
+        """wav を再生し、終わるまで待つ。48kHz なら ffmpeg を使わず PCM のまま送る。"""
+        guild = self.bot.get_guild(guild_id)
+        voice_client = guild.voice_client if guild else None
+        if not voice_client or not voice_client.is_connected():
+            return
+        pcm = wav_to_discord_pcm(wav)
+        if pcm is not None:
+            source = discord.PCMAudio(io.BytesIO(pcm))
+        else:
+            source = discord.FFmpegPCMAudio(io.BytesIO(wav), pipe=True)
+        # 他の経路で再生中なら終わるまで待つ
+        while voice_client.is_playing():
+            await asyncio.sleep(0.05)
+        loop = asyncio.get_running_loop()
+        finished = loop.create_future()
+
+        def after(error):
+            def _set():
+                if not finished.done():
+                    finished.set_result(error)
+            loop.call_soon_threadsafe(_set)
+
+        voice_client.play(source, after=after)
+        error = await finished
+        if error:
+            raise error
+
+    async def process_queue(self, guild_id):
+        """サーバーごとの読み上げキューを処理する(キャンセルされるまで動く)。"""
+        player = self.get_player(guild_id)
+        try:
+            await player.run()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            self.logger.error(f"Error in process_queue for guild {guild_id}: {e}")
+            traceback.print_exc()
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -727,10 +748,7 @@ class VoiceReadCog(commands.Cog):
             return  # 違うチャンネルの場合は無視
 
         if message.content.strip() == "s":
-            self.rust_queue.clear(message.guild.id)
-            voice_client = message.guild.voice_client
-            if voice_client and voice_client.is_playing():
-                voice_client.stop()
+            self.stop_tts(message.guild)
             try:
                 await message.add_reaction("✅")
             except Exception:
@@ -757,7 +775,15 @@ class VoiceReadCog(commands.Cog):
 
         # ユーザーのスピーカーIDを取得
         speaker_id = await self.get_user_speaker_id(message.author.id, message.guild.id)
-        self.rust_queue.add(message.guild.id, tts_text, speaker_id, message.author.display_name)  # Rustキューに追加
+        # メンションの表示名はここで解決してキューに持たせる(以前は本文の一致でメッセージを探していた)
+        ctx = MessageContext(
+            users={m.id: m.display_name for m in message.mentions},
+            roles={r.id: r.name for r in message.role_mentions},
+            channels={c.id: c.name for c in message.channel_mentions},
+        )
+        self.enqueue_tts(message.guild.id, TTSItem(
+            tts_text, speaker_id, user_name=message.author.display_name, author_id=message.author.id, ctx=ctx,
+        ))
         # コマンドの処理も継続
         await self.bot.process_commands(message)
 
@@ -899,8 +925,8 @@ class VoiceReadCog(commands.Cog):
             if not voice_client or not voice_client.is_connected():
                 return
 
-            # メッセージをRustキューに追加（システム音声はスピーカーIDを1に固定）
-            self.rust_queue.add(guild.id, msg, self.speaker_id, "")
+            # メッセージを読み上げキューに追加（システム音声はスピーカーIDを1に固定）
+            self.enqueue_tts(guild.id, TTSItem(msg, self.speaker_id))
             # ここでプロセスタスクが存在しなければ作成する
             if guild.id not in self.queue_tasks or self.queue_tasks[guild.id].done():
                 self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))

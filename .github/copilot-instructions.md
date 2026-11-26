@@ -6,7 +6,7 @@ SwiftlyTTSは、Discordボイスチャンネル向けの高性能TTS（Text-to-S
 ## アーキテクチャ
 - **bot.py**: Discordボット本体。AutoShardedBotでコグ（cogs/）を動的ロード。FastAPIサーバー（lib/bot_http_server.py）をバックグラウンドで起動し、Web UIと連携。
 - **cogs/**: 機能ごとに分割されたBot拡張（例: system/admin.py, voice/basic.py）。コグは`setup(bot)`で登録。
-- **lib/**: DB（lib/postgres.py）、VOICEVOX連携（lib/VOICEVOXlib.py）、Rust FFI（lib/rust_lib/）などの共通ロジック。
+- **lib/**: DB（lib/postgres.py）、VOICEVOX連携（lib/VOICEVOXlib.py）、読み上げ前処理（lib/text_pipeline.py, lib/dictionary_replacer.py）、読み上げキュー（lib/tts_player.py）などの共通ロジック。
 - **web/**: Next.js製Webダッシュボード。APIは`app/api/`配下、UIは`app/`配下。
 - **docker-compose.yml**: Bot/DB/VOICEVOX/Adminerの一括起動。開発・本番どちらも対応。
 
@@ -34,24 +34,12 @@ SwiftlyTTSは、Discordボイスチャンネル向けの高性能TTS（Text-to-S
 - **Web UIとの連携**: Bot起動中のみWebダッシュボードが機能。APIは`/servers`等でBotの状態取得
 - **管理者コマンド**: `/admin`コマンドは`ADMIN_ID`環境変数で制御
 
-## Rust FFI（lib/rust_lib/）の詳細
-- **役割**: Pythonから高速なキュー処理を行うためのRust実装（`lib/rust_lib/`）。`rust_queue`モジュールとしてPythonから呼び出し。
-- **主要ファイル**:
-  - `lib/rust_lib/src/lib.rs`: PyO3でPythonバインディング。ギルドごとのTTSキュー管理（add_to_queue, get_next, clear_queue, queue_length）。
-  - `lib/rust_lib/Cargo.toml`: Rustクレート設定。`pyo3`, `once_cell`依存。
-  - `lib/rust_lib_client.py`: Python側ラッパークラス。`rust_queue`をimportして操作。
-- **ビルド方法**:
-  - Rust+Pythonバインディングは[maturin](https://github.com/PyO3/maturin)でビルド。初回は`pip install maturin`。
-  - Windowsでは`cd lib/rust_lib; maturin develop`でビルドし、`rust_queue`がimport可能になる。
-  - ビルド失敗時はRust toolchainやPythonバージョン、maturinのエラー出力を確認。
-- **運用・開発Tips**:
-  - Rust側の関数追加時は`#[pyfunction]`と`#[pymodule]`の登録を忘れずに。
-  - Pythonからは`import rust_queue`で直接呼び出し。例: `rust_queue.add_to_queue(...)`
-  - Windows環境ではビルドエラー時に`build-essential`や`Microsoft C++ Build Tools`が必要な場合あり。
-  - maturinでビルドした.so/.pydファイルが`lib/rust_lib/target/debug/`等に生成される。importエラー時はパスやビルド成否を確認。
-  - Rustの型やAPI変更時はPython側ラッパー（lib/rust_lib_client.py）も合わせて修正。
-  - Rust依存追加時はCargo.tomlを編集し`maturin develop`を再実行。
-  - 典型的なトラブル例: "ImportError: DLL load failed"→Rustバイナリのビルド失敗や依存DLL不足。
+## 読み上げ処理の構成
+- `lib/text_pipeline.py`: 前処理（NFKC→メンション等の変換→辞書置換→未保護部分の加工→文字数制限→文分割）。純粋関数。
+- `lib/dictionary_replacer.py`: 辞書の置換器（最長一致・1パス、置換部分は保護）。
+- `lib/tts_player.py`: ギルドごとの読み上げキュー。1文目の合成後すぐ再生し、再生中に次の文を合成する。
+- `lib/VOICEVOXlib.py`: VOICEVOX Engine クライアント（セッション共有・同時合成数の制限・LRUキャッシュ）。
+- テスト: `python -m unittest discover -s tests -t .`
 
 ## 参考ファイル
 - `README.md`, `docs/howtorun.md`, `docker-compose.yml`, `bot.py`, `lib/`, `cogs/`, `web/`
