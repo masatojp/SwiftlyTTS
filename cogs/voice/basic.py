@@ -3,13 +3,14 @@ from discord.errors import ConnectionClosed
 from discord.ext import commands
 import asyncio
 import io
+import time
 import os
 from lib.VOICEVOXlib import get_shared_voicelib
 from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
 from lib.text_pipeline import MessageContext, PipelineConfig, preprocess as pipeline_preprocess, split_sentences
 from lib.tts_player import Chunk, GuildTTSPlayer, TTSItem, OVERFLOW_DROP_OLDEST
-from lib.VOICEVOXlib import FORMAT_DISCORD, wav_to_discord_pcm
+from lib.VOICEVOXlib import FORMAT_DISCORD, _wav_duration, wav_to_discord_pcm
 from dotenv import load_dotenv  # dotenvをインポート
 import traceback
 import logging
@@ -702,12 +703,17 @@ class VoiceReadCog(commands.Cog):
         guild = self.bot.get_guild(guild_id)
         voice_client = guild.voice_client if guild else None
         if not voice_client or not voice_client.is_connected():
+            self.logger.warning(f"[TTS] guild={guild_id} VCに接続していないため再生をスキップしました")
             return
-        pcm = wav_to_discord_pcm(wav)
+        # tts.playback: pcm=ffmpeg を使わず直接送る(既定) / ffmpeg=従来どおり ffmpeg で変換する
+        mode = str(self.tts_settings().get("playback", "pcm")).lower()
+        pcm = wav_to_discord_pcm(wav) if mode != "ffmpeg" else None
         if pcm is not None:
             source = discord.PCMAudio(io.BytesIO(pcm))
+            mode = "pcm"
         else:
             source = discord.FFmpegPCMAudio(io.BytesIO(wav), pipe=True)
+            mode = "ffmpeg"
         # 他の経路で再生中なら終わるまで待つ
         while voice_client.is_playing():
             await asyncio.sleep(0.05)
@@ -720,8 +726,16 @@ class VoiceReadCog(commands.Cog):
                     finished.set_result(error)
             loop.call_soon_threadsafe(_set)
 
+        started = time.perf_counter()
         voice_client.play(source, after=after)
         error = await finished
+        # 送信にかかった時間が音声の長さとほぼ同じなら、Discord には音声が送られている
+        channel = getattr(voice_client, "channel", None)
+        self.logger.info(
+            f"[TTS] guild={guild_id} 再生終了 channel={getattr(channel, 'name', '?')}({getattr(channel, 'id', '?')}) "
+            f"方式={mode} 音声長={_wav_duration(wav):.2f}s 送信時間={time.perf_counter() - started:.2f}s"
+            + (f" error={error!r}" if error else "")
+        )
         if error:
             raise error
 
