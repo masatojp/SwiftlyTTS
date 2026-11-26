@@ -1,4 +1,4 @@
-discord.py>=2.7.0
+discord.py>=2.7.0,<2.8
 pytz
 python-dotenv
 asyncpg
@@ -7,7 +7,8 @@ aiohttp
 psutil
 voicevox-client
 PyNaCl>=1.6.2
-davey
+# davey 0.2.0 は暗号化(DAVE)の切り替え手順が変わり、discord.py 2.7.x では E2EE の準備が終わらず無音になる
+davey>=0.1.5,<0.2
 prometheus_client
 uvloop 
 sentry-sdk
