@@ -128,7 +128,12 @@ async def on_ready():
     # DAVE(E2EE)に必要な davey の有無を確認(未導入だとVC接続が code 4017 で失敗する)
     try:
         import davey
-        logger.info(f"discord.py {discord.__version__} / davey {getattr(davey, '__version__', '不明')} (DAVE対応)")
+        davey_version = getattr(davey, '__version__', '不明')
+        logger.info(f"discord.py {discord.__version__} / davey {davey_version} (DAVE対応)")
+        if not hasattr(davey.DaveSession, "ready") or hasattr(davey.DaveSession, "execute_transition"):
+            # davey 0.2 以降は暗号化の切り替え手順が変わり、discord.py 2.7.x では音声が無音になる
+            logger.warning(f"警告: davey {davey_version} は discord.py {discord.__version__} と組み合わせると読み上げが無音になります。"
+                           "requirements.txt のとおり davey<0.2 を入れてイメージを再ビルドしてください。")
     except ImportError:
         logger.warning(f"警告: davey が未インストールです (discord.py {discord.__version__})。VC接続が code 4017 で失敗します。イメージを再ビルド/再取得してください。")
     await patch_discord_aiohttp_limit(bot)
