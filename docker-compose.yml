@@ -33,18 +33,27 @@ services:
     restart: unless-stopped
 
   voicevox:
-    image: voicevox/voicevox_engine:latest
+    # CPU 版を常駐させる。バージョンは固定し、更新時は VOICEVOX_ENGINE_TAG で切り替える
+    # (英単語の読みなど、読みの挙動が Engine のバージョンで変わるため)
+    image: voicevox/voicevox_engine:${VOICEVOX_ENGINE_TAG:-cpu-0.26.2}
     container_name: swiftlytts-voicevox
     environment:
-      VOICEVOX_ENGINE_TTS_PORT: 50021
+      # 合成に使うスレッド数。サーバーのコア数以内にする(超えると遅くなる)。
+      # 実測(2コア割当): 1本=82秒, 2本=43秒, 3本=45秒(91文字の文章)
+      VV_CPU_NUM_THREADS: ${VV_CPU_NUM_THREADS:-2}
+      # Engine 側の辞書・設定を変更する API を無効化する(Bot は使わない。外部からの書き換え防止)
+      VV_DISABLE_MUTABLE_API: ${VV_DISABLE_MUTABLE_API:-1}
+    # --load_all_models は付けない: 使われた話者のモデルだけを読み込み、メモリを節約する
     ports:
       - "50021:50021" # API
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:50021/ || exit 1"]
+      # イメージに curl が無いため bash の /dev/tcp で /version を確認する
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/50021 && printf 'GET /version HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
       interval: 10s
       timeout: 5s
       retries: 6
+      start_period: 60s
 
   bot:
     build:
