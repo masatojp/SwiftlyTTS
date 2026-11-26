@@ -143,8 +143,18 @@ class VOICEVOXLibTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(engine.queries), 1)  # 2回目はキャッシュ
         body = engine.synth_bodies[0]
         self.assertEqual(body["speedScale"], 1.2)
-        self.assertEqual(body["outputSamplingRate"], 48000)
+        # 既定では Engine の既定のサンプリングレートのまま(以前と同じ)
+        self.assertEqual(body["outputSamplingRate"], 24000)
         self.assertNotIn("is_kana", engine.queries[0])
+
+    async def test_engine_sampling_rate_setting(self):
+        engine = FakeEngine()
+        lib = await self.start(engine)
+        lib.output_sampling_rate = 48000
+        await lib.synthesize_wav("あ", 3)
+        self.assertEqual(engine.synth_bodies[0]["outputSamplingRate"], 48000)
+        self.assertEqual(VOICEVOXLib.from_config({"tts": {"engine_sampling_rate": 48000}}).output_sampling_rate, 48000)
+        self.assertEqual(VOICEVOXLib.from_config({}).output_sampling_rate, 0)
 
     async def test_cache_key_includes_speed_and_speaker(self):
         engine = FakeEngine()

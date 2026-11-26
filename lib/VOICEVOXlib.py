@@ -45,7 +45,7 @@ VOICE_GENERATION_TIME_PER_MINUTE = Gauge(
 DISCORD_SAMPLING_RATE = 48000
 
 FORMAT_DEFAULT = "default"   # Engine の既定(24kHz モノラル)
-FORMAT_DISCORD = "discord"   # 48kHz モノラル(ffmpeg なしで Discord に送れる)
+FORMAT_DISCORD = "discord"   # Discord 再生用(engine_sampling_rate=48000 なら ffmpeg なしで送れる)
 
 
 class SynthesisError(RuntimeError):
@@ -175,8 +175,11 @@ def _wav_duration(wav_bytes: bytes) -> float:
 
 class VOICEVOXLib:
     def __init__(self, base_url=None, *, concurrency: int = 1, cache_mb: float = 32,
-                 cache_entries: int = 512, timeout: float = 90.0):
+                 cache_entries: int = 512, timeout: float = 90.0, output_sampling_rate: int = 0):
         self._base_url_arg = base_url
+        # FORMAT_DISCORD のとき Engine に要求するサンプリングレート。0 なら Engine の既定のまま
+        # (以前と同じ。再生時に ffmpeg で 48kHz に変換する)。48000 にすると ffmpeg なしで再生できる
+        self.output_sampling_rate = int(output_sampling_rate or 0)
         self._default_url = "http://localhost:50021"
         self.base_urls = self._load_base_urls()
         self.backup_urls = self._load_backup_urls()
@@ -211,6 +214,7 @@ class VOICEVOXLib:
             cache_mb=num("audio_cache_mb", 32, float),
             cache_entries=num("audio_cache_entries", 512, int),
             timeout=num("synthesis_timeout", 90, float),
+            output_sampling_rate=num("engine_sampling_rate", 0, int),
         )
 
     def _load_base_urls(self):
@@ -272,8 +276,8 @@ class VOICEVOXLib:
             audio_query = await res.json()
         if "speedScale" in audio_query:
             audio_query["speedScale"] = speed
-        if output_format == FORMAT_DISCORD:
-            audio_query["outputSamplingRate"] = DISCORD_SAMPLING_RATE
+        if output_format == FORMAT_DISCORD and self.output_sampling_rate > 0:
+            audio_query["outputSamplingRate"] = self.output_sampling_rate
             audio_query["outputStereo"] = False
         async with session.post(
             f"{base_url}/synthesis", params={"speaker": speaker_id}, json=audio_query
