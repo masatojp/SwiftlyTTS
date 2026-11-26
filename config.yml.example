@@ -15,3 +15,37 @@ high_load_time_voice_switch_guild_threshold: 100  # 何人以上なら強制変�
 
 # ずんだもんの場合、ユーザー名を読み上げるかどうか
 zundamon_read_username_enabled: false  # trueでユーザー名を読み上げる、falseで読み上げない
+
+# 読み上げの設定(省略した項目は既定値。/admin config reload で反映、※印は再起動が必要)
+tts:
+  # --- 前処理 ---
+  max_length: 150            # 読み上げる最大文字数(辞書置換後に数える)。0で無制限
+  omission_text: "以下略"     # 最大文字数を超えたときに末尾で読む文言
+  url_text: "URL省略"         # URL の読み替え
+  custom_emoji: name         # カスタム絵文字: name=名前を読む / skip=読まない
+  repeat_max: 3              # 同じ文字の連続をこの回数までに縮める(「あああああ」→「あああ」)。0で無効
+  sentence_soft_max: 50      # 1文がこの文字数を超えたら読点などで分けて合成する。0で無効
+
+  # --- 合成・再生 ---
+  synthesis_concurrency: 1   # ※ VOICEVOX への同時合成数(全サーバー合計)。低スペックなら1〜2
+  audio_cache_mb: 32         # ※ 合成済み音声のキャッシュ上限(MB)。0で無効。48kHzモノラルで約1MB=10秒
+  audio_cache_entries: 512   # ※ キャッシュの最大件数
+  synthesis_timeout: 90      # ※ 1回の合成のタイムアウト(秒)
+
+  # --- キュー ---
+  queue_max_length: 0        # サーバーごとの待機メッセージの上限。0で無制限
+  queue_overflow: drop_oldest  # 上限超過時: drop_oldest=古いものを捨てる / drop_newest=新しいものを捨てる
+
+  # --- 辞書 ---
+  dictionary_refresh_interval: 600       # 辞書をDBから読み直す間隔(秒)。Webからの変更通知が届かなかった場合の保険
+  dictionary_ahocorasick_threshold: 2000 # 辞書の語数がこれ以上で、pyahocorasick が入っていれば Aho-Corasick で置換する
+
+# ログの設定(※ 変更は再起動で反映)
+logging:
+  level: INFO                # 動作ログ(標準出力 = docker compose logs)の出力レベル。環境変数 LOG_LEVEL が優先
+  timezone: Asia/Tokyo       # ログの日時と、操作ログのファイルを切り替える日付の基準
+  activity_log:              # 操作ログ: 日時・ユーザー名・操作を日ごとのファイルに保存する
+    enabled: true
+    directory: logs          # 保存先(compose では ./logs にマウント)。ファイル名は activity-YYYY-MM-DD.log
+    retention_days: 30       # これより古いファイルは自動で削除する。0で削除しない
+    include_text: true       # 読み上げた本文も記録する。false なら日時・ユーザー・操作のみ

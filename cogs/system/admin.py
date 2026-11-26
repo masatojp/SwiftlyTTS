@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from lib.postgres import PostgresDB
-from lib.VOICEVOXlib import VOICEVOXLib  # 追加: VOICEVOXLib をインポート
+from lib.VOICEVOXlib import VOICEVOXLib, get_shared_voicelib
 import os
 from dotenv import load_dotenv
 import time
@@ -176,7 +176,12 @@ class AdminCog(commands.Cog):
                 config_data.pop("prefix", None)
                 # 既存のself.bot.configの値を保持しつつ、config_dataの値のみ上書き
                 self.bot.config.update(config_data)
-                await interaction.response.send_message("config.ymlをリロードしました。", ephemeral=True)
+                # VOICEVOX の接続先(.env の VOICEVOX_URL / VOICEVOX_BACKUP_URL)も読み直す
+                self.voicelib.reload_urls()
+                await interaction.response.send_message(
+                    "config.ymlをリロードしました。\n※ tts.synthesis_concurrency / audio_cache_* は再起動後に反映されます。",
+                    ephemeral=True,
+                )
             except Exception as e:
                 await interaction.response.send_message(f"configリロード失敗: {str(e)}", ephemeral=True)
             return
@@ -189,5 +194,5 @@ class AdminCog(commands.Cog):
 async def setup(bot: commands.Bot):
     db = PostgresDB()
     await db.initialize()
-    voicelib = VOICEVOXLib()  # 追加: VOICEVOXLib を初期化
+    voicelib = get_shared_voicelib(getattr(bot, "config", None))  # 読み上げと同時実行数の制限・キャッシュを共有
     await bot.add_cog(AdminCog(bot, db, voicelib))  # 変更: voicelib を渡す

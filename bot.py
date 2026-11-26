@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import sys
 if sys.platform == "win32":
     # Windows 上ではselectorベースの高速なイベントループを明示的に設定
@@ -16,6 +17,7 @@ from discord.ext import commands
 import os
 from dotenv import load_dotenv
 import yaml
+from lib.app_logging import setup_logging
 from lib.postgres import PostgresDB  # PostgresDBクラスをインポート
 import threading
 import uvicorn
@@ -29,6 +31,10 @@ SHARD_COUNT = int(os.getenv('SHARD_COUNT', 3))  # デフォルト値を3に設�
 
 with open("config.yml", "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
+
+# 動作ログは標準出力(docker compose logs)へ、操作ログは logs/ の日次ファイルへ
+setup_logging(config)
+logger = logging.getLogger("swiftlytts")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -44,7 +50,7 @@ bot.config = config  # 追加: 設定をbotインスタンスに保持
 
 def start_bot_http_server():
     port = int(os.getenv("BOT_HTTP_PORT", 8000))
-    uvicorn.run(bot_http_app, host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run(bot_http_app, host="0.0.0.0", port=port, log_level="info", log_config=None)
 
 
 # botインスタンスをFastAPI側に渡す
@@ -68,7 +74,7 @@ async def load_all_cogs():
                     .rsplit(".", 1)[0]
             )
             await bot.load_extension(ext)  # 非同期でロード
-    print("All cogs loaded synchronously!")
+    logger.info("All cogs loaded synchronously!")
 
 # --- ここまで ---
 
@@ -100,7 +106,7 @@ async def update_rpc_task():
                 )
             )
         except Exception as e:
-            print(f"Error in update_rpc_task: {e}")
+            logger.error(f"Error in update_rpc_task: {e}")
         await asyncio.sleep(10)  # 10秒ごとに更新するように変更
 
 async def restart_rpc_task():
@@ -113,27 +119,27 @@ async def restart_rpc_task():
                     break
             bot.loop.create_task(update_rpc_task(), name="update_rpc_task")
         except Exception as e:
-            print(f"Error in restart_rpc_task: {e}")
+            logger.error(f"Error in restart_rpc_task: {e}")
         await asyncio.sleep(3600)  # 1時間ごとにタスクを再作成
 
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user}')
+    logger.info(f'Logged in as {bot.user}')
     # DAVE(E2EE)に必要な davey の有無を確認(未導入だとVC接続が code 4017 で失敗する)
     try:
         import davey
-        print(f"discord.py {discord.__version__} / davey {getattr(davey, '__version__', '不明')} (DAVE対応)")
+        logger.info(f"discord.py {discord.__version__} / davey {getattr(davey, '__version__', '不明')} (DAVE対応)")
     except ImportError:
-        print(f"警告: davey が未インストールです (discord.py {discord.__version__})。VC接続が code 4017 で失敗します。イメージを再ビルド/再取得してください。")
+        logger.warning(f"警告: davey が未インストールです (discord.py {discord.__version__})。VC接続が code 4017 で失敗します。イメージを再ビルド/再取得してください。")
     await patch_discord_aiohttp_limit(bot)
 
     # データベース接続テスト
-    print("Testing database connection...")
+    logger.info("Testing database connection...")
     try:
         await db.initialize()
-        print("Database connection successful!")
+        logger.info("Database connection successful!")
     except Exception as e:
-        print(f"Database connection failed: {e}")
+        logger.error(f"Database connection failed: {e}")
         await bot.close()
         return
 
@@ -142,10 +148,11 @@ async def on_ready():
 
     # コマンド同期を非同期タスクとして実行
     bot.loop.create_task(bot.tree.sync())
-    print("Commands syncing in background!")
+    logger.info("Commands syncing in background!")
 
     # RPCタスクを遅延起動
     bot.loop.create_task(update_rpc_task(), name="update_rpc_task")
     bot.loop.create_task(restart_rpc_task(), name="restart_rpc_task")
 
-bot.run(TOKEN)
+# ログは setup_logging で設定済みのため、discord.py 独自のハンドラーは付けない
+bot.run(TOKEN, log_handler=None)

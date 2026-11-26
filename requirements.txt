@@ -13,4 +13,3 @@ uvloop
 sentry-sdk
 fastapi
 uvicorn
-maturin

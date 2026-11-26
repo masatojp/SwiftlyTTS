@@ -26,10 +26,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Rust toolchain (required for rust extension)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
-
 RUN pip install uv
 
 COPY requirements.txt .
@@ -39,14 +35,8 @@ RUN uv venv /app/.venv
 ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Install python dependencies and maturin
-RUN uv pip install -r requirements.txt maturin
-
-COPY . .
-
-# Build Rust extension
-WORKDIR /app/lib/rust_lib
-RUN maturin develop --release
+# Install python dependencies
+RUN uv pip install -r requirements.txt
 
 # --- Stage 2: Runtime ---
 FROM python:3.11-slim AS runtime
@@ -55,7 +45,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Install ffmpeg (required for Discord TTS audio encoding)
+# ffmpeg: 48kHz 以外の音声を再生するときのフォールバック用。
+# Discord への Opus エンコードに必要な libopus もこの依存で入る。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
@@ -69,6 +60,6 @@ COPY --from=builder /app/.venv /app/.venv
 COPY . .
 
 # Create tmp directory for TTS processing
-RUN mkdir -p /app/tmp
+RUN mkdir -p /app/tmp /app/logs
 
 CMD ["python", "bot.py"]

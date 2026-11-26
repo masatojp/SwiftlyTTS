@@ -1,5 +1,6 @@
 import os
 import asyncio
+import logging
 import asyncpg
 from dotenv import load_dotenv
 from typing import Optional, List
@@ -16,7 +17,7 @@ if DB_SSL_ENV == "true":
     DB_SSL = True
 else:
     DB_SSL = False
-print(f"Connecting to DB at {DB_HOST}:{DB_PORT} as {DB_USER} to {DB_NAME} (SSL: {DB_SSL})")
+logger = logging.getLogger(__name__)
 
 class PostgresDB:
     async def upsert_announce(self, announce: str) -> None:
@@ -49,6 +50,7 @@ class PostgresDB:
 
     async def initialize(self) -> None:
         """Initialize the connection pool and ensure the dictionary table exists"""
+        logger.info(f"Connecting to DB at {DB_HOST}:{DB_PORT} as {DB_USER} to {DB_NAME} (SSL: {DB_SSL})")
         # DB側の起動/許可設定が間に合わない場合に備えてリトライする
         max_attempts = 5
         for attempt in range(1, max_attempts + 1):
@@ -67,7 +69,7 @@ class PostgresDB:
             except (OSError, asyncpg.PostgresError) as e:
                 if attempt == max_attempts:
                     raise
-                print(f"DB connection failed (attempt {attempt}/{max_attempts}): {e}. Retrying...")
+                logger.warning(f"DB connection failed (attempt {attempt}/{max_attempts}): {e}. Retrying...")
                 await asyncio.sleep(attempt * 3)
         # 辞書テーブルを作成
         async with self._pool.acquire() as connection:

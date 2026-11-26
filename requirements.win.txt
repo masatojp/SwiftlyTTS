@@ -11,4 +11,3 @@ sentry-sdk
 fastapi
 uvicorn
 pytz
-maturin
