@@ -5,6 +5,7 @@ Discord・DB・VOICEVOX はフェイクに置き換える。
 
 import asyncio
 import io
+import shutil
 import threading
 import types
 import unittest
@@ -149,6 +150,25 @@ class VoiceCogTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(isinstance(s, discord.PCMAudio) for s in self.voice_client.sources))
         self.assertEqual(self.voice_client.sources[0].frames_read, 3)  # 20ms x 3 フレーム
         self.assertEqual(self.bot.tts_counter, 1)
+
+    async def test_playback_result_is_logged(self):
+        item = TTSItem("テスト", 3, done=asyncio.get_running_loop().create_future())
+        with self.assertLogs("cogs.voice.basic", level="INFO") as logs:
+            self.cog.enqueue_tts(self.GUILD_ID, item)
+            self.cog.ensure_queue_task(self.GUILD_ID)
+            await asyncio.wait_for(item.done, 3)
+        line = next(m for m in logs.output if "再生終了" in m)
+        self.assertIn("方式=pcm", line)
+        self.assertIn("音声長=0.06s", line)
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg が未インストール")
+    async def test_playback_ffmpeg_setting(self):
+        self.bot.config["tts"]["playback"] = "ffmpeg"
+        item = TTSItem("テスト", 3, done=asyncio.get_running_loop().create_future())
+        self.cog.enqueue_tts(self.GUILD_ID, item)
+        self.cog.ensure_queue_task(self.GUILD_ID)
+        self.assertTrue(await asyncio.wait_for(item.done, 5))
+        self.assertIsInstance(self.voice_client.sources[0], discord.FFmpegPCMAudio)
 
     async def test_stop_command_clears_queue(self):
         self.voice_client.frame_sleep = 0.05

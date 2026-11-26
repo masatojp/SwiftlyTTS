@@ -31,6 +31,7 @@ tts:
   audio_cache_mb: 32         # ※ 合成済み音声のキャッシュ上限(MB)。0で無効。48kHzモノラルで約1MB=10秒
   audio_cache_entries: 512   # ※ キャッシュの最大件数
   synthesis_timeout: 90      # ※ 1回の合成のタイムアウト(秒)
+  playback: pcm              # 再生方式: pcm=ffmpeg を使わず直接送る / ffmpeg=従来どおり ffmpeg で変換する
 
   # --- キュー ---
   queue_max_length: 0        # サーバーごとの待機メッセージの上限。0で無制限

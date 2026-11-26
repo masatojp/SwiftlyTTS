@@ -60,6 +60,7 @@
 | `audio_cache_mb` | 32 | 合成済み音声キャッシュの上限MB（約1MB=10秒）。0で無効 ※再起動で反映 |
 | `audio_cache_entries` | 512 | キャッシュの最大件数 ※再起動で反映 |
 | `synthesis_timeout` | 90 | 1回の合成のタイムアウト秒 ※再起動で反映 |
+| `playback` | pcm | 再生方式。`pcm`=ffmpeg を使わず直接送る / `ffmpeg`=従来どおり ffmpeg で変換する |
 | `queue_max_length` | 0 | サーバーごとの待機メッセージ上限。0で無制限 |
 | `queue_overflow` | drop_oldest | 上限超過時に `drop_oldest`=古いものを捨てる / `drop_newest`=新しいものを捨てる |
 | `dictionary_refresh_interval` | 600 | 辞書をDBから読み直す間隔（秒） |
