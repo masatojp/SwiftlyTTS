@@ -373,7 +373,7 @@ class DictionaryCog(commands.Cog):
             else:
                 await interaction.response.send_message(embed=make_embed(0), ephemeral=True)
         except Exception as e:
-            print(e)  # ここでエラー内容を出力
+            self.logger.exception(f"辞書一覧の表示に失敗: {e}")
             embed = discord.Embed(
                 title="エラー",
                 description="エラーが発生しました。詳細は管理者にお問い合わせください。",
@@ -386,7 +386,7 @@ class DictionaryCog(commands.Cog):
                 else:
                     await interaction.response.send_message(embed=embed, ephemeral=True)
             except Exception as inner_e:
-                print(inner_e)
+                self.logger.error(f"エラー通知の送信に失敗: {inner_e}")
 
 
 async def setup(bot):

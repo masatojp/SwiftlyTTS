@@ -286,8 +286,7 @@ class VOICEVOXLib:
         urls = list(self.base_urls)
         random.shuffle(urls)  # 複数指定時は負荷分散
         for base_url in urls:
-            if os.getenv("DEBUG") == "1":
-                print(f"Using VOICEVOX URL: {base_url}")
+            logger.debug(f"Using VOICEVOX URL: {base_url}")
             for attempt in range(3):
                 try:
                     wav = await self._request_wav(session, base_url, text, speaker_id, speed, output_format)

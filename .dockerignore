@@ -14,3 +14,4 @@ web/node_modules
 tmp/
 *.log
 *.env
+logs/

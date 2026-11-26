@@ -39,3 +39,13 @@ tts:
   # --- 辞書 ---
   dictionary_refresh_interval: 600       # 辞書をDBから読み直す間隔(秒)。Webからの変更通知が届かなかった場合の保険
   dictionary_ahocorasick_threshold: 2000 # 辞書の語数がこれ以上で、pyahocorasick が入っていれば Aho-Corasick で置換する
+
+# ログの設定(※ 変更は再起動で反映)
+logging:
+  level: INFO                # 動作ログ(標準出力 = docker compose logs)の出力レベル。環境変数 LOG_LEVEL が優先
+  timezone: Asia/Tokyo       # ログの日時と、操作ログのファイルを切り替える日付の基準
+  activity_log:              # 操作ログ: 日時・ユーザー名・操作を日ごとのファイルに保存する
+    enabled: true
+    directory: logs          # 保存先(compose では ./logs にマウント)。ファイル名は activity-YYYY-MM-DD.log
+    retention_days: 30       # これより古いファイルは自動で削除する。0で削除しない
+    include_text: true       # 読み上げた本文も記録する。false なら日時・ユーザー・操作のみ

@@ -86,6 +86,14 @@ services:
       # 注意: ./:/app をマウントすると、イメージ内の /app/.venv(依存パッケージ)がホストの内容で隠れて
       # ModuleNotFoundError になるため、ソース全体のマウントは行わない
       - ./config.yml:/app/config.yml
+      # 操作ログ(activity-YYYY-MM-DD.log)をホストの ./logs に保存する
+      - ./logs:/app/logs
+    # 動作ログは docker compose logs -f bot で見る。肥大化しないように上限を設ける(10MB x 5ファイル)
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     restart: unless-stopped
 
   adminer:

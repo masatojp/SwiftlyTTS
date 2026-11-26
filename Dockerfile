@@ -60,6 +60,6 @@ COPY --from=builder /app/.venv /app/.venv
 COPY . .
 
 # Create tmp directory for TTS processing
-RUN mkdir -p /app/tmp
+RUN mkdir -p /app/tmp /app/logs
 
 CMD ["python", "bot.py"]

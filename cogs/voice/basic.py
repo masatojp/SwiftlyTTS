@@ -14,6 +14,8 @@ from dotenv import load_dotenv  # dotenvをインポート
 import traceback
 import logging
 
+from lib.app_logging import log_activity
+
 # 話者名とIDの紐付けリスト
 SPEAKER_LIST = [
     {"name": "四国めたん", "id": 2},
@@ -749,6 +751,7 @@ class VoiceReadCog(commands.Cog):
 
         if message.content.strip() == "s":
             self.stop_tts(message.guild)
+            log_activity("stop", user=message.author, guild=message.guild, channel=message.channel)
             try:
                 await message.add_reaction("✅")
             except Exception:
@@ -784,6 +787,8 @@ class VoiceReadCog(commands.Cog):
         self.enqueue_tts(message.guild.id, TTSItem(
             tts_text, speaker_id, user_name=message.author.display_name, author_id=message.author.id, ctx=ctx,
         ))
+        log_activity("tts", user=message.author, guild=message.guild, channel=message.channel,
+                     detail=f"speaker={speaker_id}", text=tts_text)
         # コマンドの処理も継続
         await self.bot.process_commands(message)
 

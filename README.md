@@ -90,6 +90,28 @@
 ```
 `docker run` の場合は `docker run -d -e VV_CPU_NUM_THREADS=2 -e VV_DISABLE_MUTABLE_API=1 -p 50021:50021 voicevox/voicevox_engine:cpu-0.26.2` です。
 
+### ログ
+**動作ログ**（起動・接続・読み上げ・エラーなど）は標準出力に出ます。
+```bash
+docker compose logs -f bot            # 追いかけて表示
+docker compose logs --since 1h bot    # 直近1時間
+```
+同梱の compose では、Docker 側のログが肥大化しないように 10MB×5ファイルまでに制限しています。
+
+**操作ログ**は「いつ・誰が・何をしたか」を日ごとのファイルに保存します。compose ではホストの `./logs/activity-YYYY-MM-DD.log` に出力され、`retention_days`（既定30日）より古いファイルは自動で削除されます。1行1件のタブ区切りです。
+
+```
+日時                        操作     サーバー名(ID)      チャンネル名(ID)   表示名(@ユーザー名, ID)            詳細          本文
+2026-11-27 21:04:13+09:00  tts      雑談鯖(1234…)      読み上げ(5678…)    まさと(@masato, 9012…)            speaker=3     こんにちは
+2026-11-27 21:04:20+09:00  command  雑談鯖(1234…)      読み上げ(5678…)    まさと(@masato, 9012…)            /dictionary add key=鯖 value=さば
+2026-11-27 21:05:02+09:00  stop     雑談鯖(1234…)      読み上げ(5678…)    まさと(@masato, 9012…)            -
+```
+- 操作の種類: `tts`（メッセージの読み上げ）、`read`（`/read`）、`stop`（`s`）、`command`（その他のコマンド。引数も記録）
+- 本文を残したくない場合は `logging.activity_log.include_text: false` にしてください（`tts` と `/read` の本文を記録しなくなります）。
+- compose を使わずに `docker run` する場合は、`-v $(pwd)/logs:/app/logs` でマウントしないとコンテナの削除とともに消えます。
+
+設定は `config.yml` の `logging:` です（[config.yml.example](config.yml.example) を参照）。日時は `timezone`（既定 `Asia/Tokyo`）で記録します。
+
 ### 応答時間の計測
 Discord に接続せず、Engine に実際に合成させて「再生開始までの時間」を変更前の方式と比較できます。
 ```bash
