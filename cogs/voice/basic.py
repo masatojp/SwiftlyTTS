@@ -410,12 +410,9 @@ class VoiceReadCog(commands.Cog):
         
         # テキストを辞書で変換
         dictionary_cog = self.bot.get_cog("DictionaryCog")
-        is_kana = False
         if dictionary_cog:
-            converted_text, dict_is_kana = await dictionary_cog.apply_dictionary(text, interaction.guild.id)
-            self.logger.info(f"Parsed: {converted_text} (AI dict applied: {str(text != converted_text)}, dict_is_kana: {dict_is_kana})")
-            text = converted_text
-            is_kana = dict_is_kana
+            text, _ = await dictionary_cog.apply_dictionary(text, interaction.guild.id)
+            self.logger.info(f"Parsed: {text}")
 
         try:
             tmp_wav = f"tmp/tmp_{uuid.uuid4()}_read.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
@@ -423,18 +420,8 @@ class VoiceReadCog(commands.Cog):
             if speed is None:
                 speed = 1.0
             
-            import re
-            # 辞書からのフラグがFalse（または非AI）の場合に限り、正規表現で再判定
-            if not is_kana:
-                # AquesTalk記法のみで構成されているか判定
-                if re.match(r"^[ァ-ヴー・、/_' 　？]+$", text) and "'" in text:  # アクセント記号を含む場合のみAquesTalk記法とみなす
-                    is_kana = True
-                else:
-                    # 混ざっている場合はAquesTalk特有記号を除去してOpenJTalkに渡す (誤読回避)
-                    text = re.sub(r"[_'/]", "", text)
-
             try:
-                saved_path = await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed, is_kana=is_kana)
+                saved_path = await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed)
                 self.logger.info(f"Output: Success (Speaker ID: {self.speaker_id}, File: {saved_path})")
             except Exception:
                 traceback.print_exc()
@@ -671,12 +658,9 @@ class VoiceReadCog(commands.Cog):
 
                 # テキストを辞書で変換
                 dictionary_cog = self.bot.get_cog("DictionaryCog")
-                is_kana = False
                 if dictionary_cog:
-                    converted_text, dict_is_kana = await dictionary_cog.apply_dictionary(text, guild_id)
-                    self.logger.info(f"Parsed: {converted_text} (AI dict applied: {str(text != converted_text)}, dict_is_kana: {dict_is_kana})")
-                    text = converted_text
-                    is_kana = dict_is_kana
+                    text, _ = await dictionary_cog.apply_dictionary(text, guild_id)
+                    self.logger.info(f"Parsed: {text}")
 
                 # ずんだもんの場合、configでユーザー名読み上げ有効なら先頭に追加
                 config = getattr(self.bot, "config", {})
@@ -685,27 +669,14 @@ class VoiceReadCog(commands.Cog):
                     if dictionary_cog:
                         user_name, _ = await dictionary_cog.apply_dictionary(user_name, guild_id)
                     text = f"{user_name}、{text}"
-                    # 名前を結合した場合は AquesTalk 記法が壊れる可能性がある（名前が漢字などの場合）ため、
-                    # 一旦 is_kana を False にして正規表現に任せるか、あるいは結合後の判断を行う
-                    is_kana = False
 
                 tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
                 speed = await self.db.get_server_voice_speed(guild_id)
                 if speed is None:
                     speed = 1.0
                 
-                import re
-                # 辞書からのフラグがFalse（または非AI）の場合に限り、正規表現で再判定
-                if not is_kana:
-                    # AquesTalk記法のみで構成されているか判定
-                    if re.match(r"^[ァ-ヴー・、/_' 　？]+$", text) and "'" in text:  # アクセント記号を含む場合のみAquesTalk記法とみなす
-                        is_kana = True
-                    else:
-                        # 混ざっている場合はAquesTalk特有記号を除去してOpenJTalkに渡す
-                        text = re.sub(r"[_'/]", "", text)
-
                 try:
-                    saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed, is_kana=is_kana)
+                    saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed)
                     self.logger.info(f"Output: Success (Speaker ID: {speaker_id}, File: {saved_path})")
                 except Exception as e:
                     self.logger.error(f"TTS synth failed for guild {guild_id}: {e}")
