@@ -15,6 +15,25 @@ def set_bot(bot):
     global _bot
     _bot = bot
 
+def _call_dictionary_cog(method_name: str, *args) -> bool:
+    """DictionaryCog のキャッシュ破棄を Bot のイベントループ上で実行する。
+
+    この HTTP サーバーは別スレッド(別イベントループ)で動くため、Bot 側のオブジェクトは
+    call_soon_threadsafe 経由で操作する。
+    """
+    if _bot is None:
+        return False
+    cog = _bot.get_cog("DictionaryCog")
+    if cog is None:
+        return False
+    try:
+        _bot.loop.call_soon_threadsafe(getattr(cog, method_name), *args)
+        return True
+    except Exception as e:
+        print(f"[Notify] cache clear error: {e}")
+        return False
+
+
 # CORS許可（必要に応じて調整）
 app.add_middleware(
     CORSMiddleware,
@@ -81,23 +100,8 @@ async def notify_user_dictionary(request: Request):
     data = await request.json()
     user_id = data.get("user_id")
     print(f"[Notify] user_dictionary changed for user_id={user_id}")
-    # --- キャッシュクリア処理 ---
-    if _bot is not None and user_id is not None:
-        cog = _bot.get_cog("DictionaryCog")
-        if cog is not None:
-            # cache_lockを使ってpop
-            try:
-                async def clear_cache():
-                    async with cog.cache_lock:
-                        cog.user_dict_cache.pop(int(user_id), None)
-                # 別スレッドから呼ばれる可能性があるのでloopで実行
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.run_coroutine_threadsafe(clear_cache(), loop)
-                else:
-                    loop.run_until_complete(clear_cache())
-            except Exception as e:
-                print(f"[Notify] cache clear error: {e}")
+    if user_id is not None:
+        _call_dictionary_cog("invalidate_user", int(user_id))
     return {"ok": True}
 
 
@@ -108,21 +112,8 @@ async def notify_guild_dictionary(request: Request):
     data = await request.json()
     guild_id = data.get("guild_id")
     print(f"[Notify] guild_dictionary changed for guild_id={guild_id}")
-    # --- キャッシュクリア処理 ---
-    if _bot is not None and guild_id is not None:
-        cog = _bot.get_cog("DictionaryCog")
-        if cog is not None:
-            try:
-                async def clear_cache():
-                    async with cog.cache_lock:
-                        cog.server_dict_cache.pop(int(guild_id), None)
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.run_coroutine_threadsafe(clear_cache(), loop)
-                else:
-                    loop.run_until_complete(clear_cache())
-            except Exception as e:
-                print(f"[Notify] guild cache clear error: {e}")
+    if guild_id is not None:
+        _call_dictionary_cog("invalidate_guild", int(guild_id))
     return {"ok": True}
 
 
@@ -198,20 +189,7 @@ async def notify_user_voice(request: Request):
     print(f"[Notify] user_voice changed for user_id={user_id}")
     
     # ユーザー辞書キャッシュをクリア（ボイス変更時に辞書も再適用させる）
-    if _bot is not None and user_id is not None:
-        cog = _bot.get_cog("DictionaryCog")
-        if cog is not None:
-            try:
-                async def clear_cache():
-                    async with cog.cache_lock:
-                        cog.user_dict_cache.pop(int(user_id), None)
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.run_coroutine_threadsafe(clear_cache(), loop)
-                else:
-                    loop.run_until_complete(clear_cache())
-                print(f"[Notify] Cleared user dictionary cache for user_id={user_id}")
-            except Exception as e:
-                print(f"[Notify] user voice cache clear error: {e}")
-    
+    if user_id is not None and _call_dictionary_cog("invalidate_user", int(user_id)):
+        print(f"[Notify] Cleared user dictionary cache for user_id={user_id}")
+
     return {"ok": True}

@@ -411,7 +411,7 @@ class VoiceReadCog(commands.Cog):
         # テキストを辞書で変換
         dictionary_cog = self.bot.get_cog("DictionaryCog")
         if dictionary_cog:
-            text, _ = await dictionary_cog.apply_dictionary(text, interaction.guild.id)
+            text = await dictionary_cog.preprocess(text, interaction.guild.id, interaction.user.id)
             self.logger.info(f"Parsed: {text}")
 
         try:
@@ -659,7 +659,7 @@ class VoiceReadCog(commands.Cog):
                 # テキストを辞書で変換
                 dictionary_cog = self.bot.get_cog("DictionaryCog")
                 if dictionary_cog:
-                    text, _ = await dictionary_cog.apply_dictionary(text, guild_id)
+                    text = await dictionary_cog.preprocess(text, guild_id)
                     self.logger.info(f"Parsed: {text}")
 
                 # ずんだもんの場合、configでユーザー名読み上げ有効なら先頭に追加
@@ -667,7 +667,7 @@ class VoiceReadCog(commands.Cog):
                 zundamon_read_username_enabled = config.get("zundamon_read_username_enabled", False)
                 if speaker_id == 3 and zundamon_read_username_enabled:
                     if dictionary_cog:
-                        user_name, _ = await dictionary_cog.apply_dictionary(user_name, guild_id)
+                        user_name = await dictionary_cog.preprocess(user_name, guild_id)
                     text = f"{user_name}、{text}"
 
                 tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
