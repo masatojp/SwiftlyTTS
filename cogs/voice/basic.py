@@ -11,6 +11,9 @@ from lib.postgres import PostgresDB  # PostgresDBをインポート
 from lib.text_pipeline import MessageContext, PipelineConfig, preprocess as pipeline_preprocess, split_sentences
 from lib.tts_player import Chunk, GuildTTSPlayer, TTSItem, OVERFLOW_DROP_OLDEST
 from lib.VOICEVOXlib import FORMAT_DISCORD, _wav_duration, wav_to_discord_pcm
+from lib.voice_monitor import (
+    FRAME_SEC, SILENCE_DBFS, format_status, sent_packets, status_problems, voice_status, wav_format, wav_peak_dbfs,
+)
 from dotenv import load_dotenv  # dotenvをインポート
 import traceback
 import logging
@@ -726,18 +729,43 @@ class VoiceReadCog(commands.Cog):
                     finished.set_result(error)
             loop.call_soon_threadsafe(_set)
 
+        seq_before = getattr(voice_client, "sequence", None)
         started = time.perf_counter()
         voice_client.play(source, after=after)
         error = await finished
-        # 送信にかかった時間が音声の長さとほぼ同じなら、Discord には音声が送られている
-        channel = getattr(voice_client, "channel", None)
-        self.logger.info(
-            f"[TTS] guild={guild_id} 再生終了 channel={getattr(channel, 'name', '?')}({getattr(channel, 'id', '?')}) "
-            f"方式={mode} 音声長={_wav_duration(wav):.2f}s 送信時間={time.perf_counter() - started:.2f}s"
-            + (f" error={error!r}" if error else "")
-        )
+        elapsed = time.perf_counter() - started
+        self._log_playback(guild, voice_client, wav, mode, elapsed,
+                           sent_packets(seq_before, getattr(voice_client, "sequence", None)), error)
         if error:
             raise error
+
+    def _log_playback(self, guild, voice_client, wav: bytes, mode: str, elapsed: float,
+                      packets, error) -> None:
+        """再生結果を記録する。音が届かない原因になりうる状態は WARNING にする。
+
+        - 音量(最大振幅): 合成した音声が無音でないか
+        - 送信パケット数: Discord に実際に送ったか(20ms ごとに1つ)
+        - VC の状態: サーバーミュート・DAVE(E2EE)の準備状況など
+        """
+        duration = _wav_duration(wav)
+        peak = wav_peak_dbfs(wav)
+        status = voice_status(voice_client, guild)
+        problems = status_problems(status)
+        if peak is not None and peak < SILENCE_DBFS:
+            problems.append(f"合成した音声が無音(最大 {peak:.0f}dBFS)")
+        expected = int(duration / FRAME_SEC)
+        if packets is not None and expected and packets < expected * 0.5:
+            problems.append(f"送信パケットが少ない({packets}/{expected})")
+        peak_text = "?" if peak is None else f"{peak:.1f}dBFS"
+        message = (
+            f"[TTS] guild={guild.id} 再生終了 方式={mode} 形式={wav_format(wav)} 音声長={duration:.2f}s "
+            f"送信時間={elapsed:.2f}s 送信パケット={packets}/{expected} 音量={peak_text} | {format_status(status)}"
+            + (f" error={error!r}" if error else "")
+        )
+        if problems:
+            self.logger.warning(message + " | 問題: " + " / ".join(problems))
+        else:
+            self.logger.info(message)
 
     async def process_queue(self, guild_id):
         """サーバーごとの読み上げキューを処理する(キャンセルされるまで動く)。"""
